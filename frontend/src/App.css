@@ -1,0 +1,60 @@
+.landing {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #1a2e1a 0%, #2d4a2d 100%);
+  color: #f0f7f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.landing-header {
+  padding: 1.5rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logo-icon {
+  height: 2rem;
+  width: auto;
+}
+
+.logo-text {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.landing-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  gap: 1.25rem;
+}
+
+.landing-title {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.1;
+}
+
+.landing-subtitle {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  color: #a8c5a8;
+  max-width: 480px;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.landing-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}

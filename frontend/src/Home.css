@@ -1,0 +1,104 @@
+.home {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #1a2e1a 0%, #2d4a2d 100%);
+  color: #f0f7f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ── Banner ────────────────────────────────────────────────────────────────── */
+.home-header {
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(76, 175, 80, 0.3);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.home-header-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.home-header-user {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #a8c5a8;
+}
+
+.home-username {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.home-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: #a8c5a8;
+}
+
+/* ── Search row ────────────────────────────────────────────────────────────── */
+.home-search-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  padding: 1.25rem 2rem;
+}
+
+.home-search-barcode {
+  flex: 0 0 20%;
+  height: 2.75rem;
+}
+
+.home-search-input {
+  flex: 0 0 60%;
+  height: 2.75rem;
+}
+
+.home-search-receipt {
+  flex: 0 0 calc(20% - 1.5rem);
+  height: 2.75rem;
+}
+
+/* ── AI row ────────────────────────────────────────────────────────────────── */
+.home-ai-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0 2rem 1.25rem;
+}
+
+.home-ai-input {
+  flex: 0 0 80%;
+}
+
+.home-ai-input .ai-textarea {
+  width: 100%;
+  background: linear-gradient(135deg, rgba(76,175,80,0.08) 0%, rgba(255,255,255,0.04) 100%);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.home-ai-recipe {
+  flex: 0 0 calc(20% - 0.75rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.home-ai-response {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: #a8c5a8;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+/* ── Content area ──────────────────────────────────────────────────────────── */
+.home-main {
+  flex: 1;
+  padding: 1.5rem 2rem;
+}
