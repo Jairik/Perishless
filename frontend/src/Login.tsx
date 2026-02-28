@@ -1,35 +1,24 @@
 import React, { useState } from 'react';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from './firebase';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-export default function Register() {
+export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
     setLoading(true);
+
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email, password);
       navigate('/');
     } catch (err: any) {
       setError(err.message);
@@ -42,9 +31,9 @@ export default function Register() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#1b5e20] to-[#2e7d32]">
       <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md">
         <h1 className="text-3xl font-bold text-center mb-2 text-[#1b5e20]">PerishLess</h1>
-        <h2 className="text-2xl font-semibold text-center mb-6 text-gray-800">Create Account</h2>
+        <h2 className="text-2xl font-semibold text-center mb-6 text-gray-800">Sign In</h2>
         
-        <form onSubmit={handleRegister} className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <Input
               type="email"
@@ -67,17 +56,6 @@ export default function Register() {
             />
           </div>
 
-          <div>
-            <Input
-              type="password"
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              className="w-full"
-            />
-          </div>
-
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
               {error}
@@ -89,14 +67,14 @@ export default function Register() {
             disabled={loading}
             className="w-full bg-[#4caf50] hover:bg-[#43a047] text-white font-semibold"
           >
-            {loading ? 'Registering...' : 'Register'}
+            {loading ? 'Signing In...' : 'Sign In'}
           </Button>
         </form>
 
         <p className="text-center mt-6 text-gray-600">
-          Already have an account?{' '}
-          <a href="/login" className="text-[#4caf50] hover:text-[#43a047] font-semibold">
-            Sign In
+          Don't have an account?{' '}
+          <a href="/register" className="text-[#4caf50] hover:text-[#43a047] font-semibold">
+            Create One
           </a>
         </p>
       </div>

@@ -1,7 +1,14 @@
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase';
 import { Button } from '@/components/ui/button'
 import './App.css'
+import Home from './Home';
+import Login from './Login';
+import Register from './Register';
 
-function App() {
+function Landing() {
   return (
     <div className="landing">
       <header className="landing-header">
@@ -19,6 +26,7 @@ function App() {
           <Button
             size="lg"
             className="bg-[#4caf50] hover:bg-[#43a047] hover:border-[#e65100] border-2 border-transparent text-white px-8"
+            onClick={() => window.location.href = '/register'}
           >
             Sign Up
           </Button>
@@ -26,6 +34,7 @@ function App() {
             size="lg"
             variant="outline"
             className="bg-transparent text-[#f0f7f0] border-2 border-transparent hover:bg-[rgba(76,175,80,0.15)] hover:text-[#f0f7f0] hover:border-[#e65100] px-8"
+            onClick={() => window.location.href = '/login'}
           >
             Log In
           </Button>
@@ -33,6 +42,34 @@ function App() {
       </main>
     </div>
   )
+}
+
+function App() {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
+        <Route path="/register" element={user ? <Navigate to="/" /> : <Register />} />
+        <Route path="/" element={user ? <Home /> : <Landing />} />
+      </Routes>
+    </Router>
+  );
 }
 
 export default App

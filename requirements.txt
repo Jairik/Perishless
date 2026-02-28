@@ -1,0 +1,8 @@
+fastapi
+numpy
+requests
+pydantic
+uvicorn
+openfoodfacts
+python-dotenv
+firebase-admin

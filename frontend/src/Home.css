@@ -64,38 +64,178 @@
   height: 2.75rem;
 }
 
-/* ── AI row ────────────────────────────────────────────────────────────────── */
-.home-ai-row {
+/* ── Tab bar ───────────────────────────────────────────────────────────────── */
+.home-tabs {
   display: flex;
-  align-items: flex-start;
+  gap: 0;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(76, 175, 80, 0.25);
+  padding: 0 2rem;
+}
+
+.home-tab {
+  padding: 0.75rem 1.4rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #a8c5a8;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+}
+.home-tab:hover {
+  color: #f0f7f0;
+}
+.home-tab--active {
+  color: #4caf50;
+  border-bottom-color: #4caf50;
+}
+
+/* ── AI page ───────────────────────────────────────────────────────────────── */
+.home-ai-page {
+  padding: 2rem;
+}
+
+.home-ai-chat {
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
-  padding: 0 2rem 1.25rem;
+  max-width: 720px;
 }
 
-.home-ai-input {
-  flex: 0 0 80%;
+.home-ai-response-box {
+  background: rgba(76, 175, 80, 0.08);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 0.5rem;
+  padding: 1rem;
 }
 
-.home-ai-input .ai-textarea {
+.home-ai-response {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #d4e8d4;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+/* ── Placeholder ───────────────────────────────────────────────────────────── */
+.home-page-placeholder {
+  color: #a8c5a8;
+  font-size: 1rem;
+  padding: 2rem;
+}
+
+/* ── Avatar button ────────────────────────────────────────────────────────── */
+.home-avatar-btn {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.home-avatar-btn:hover {
+  color: #4caf50;
+}
+
+/* ── Profile dropdown ──────────────────────────────────────────────────────── */
+.home-header-user {
+  position: relative;
+}
+
+.home-dropdown {
+  position: absolute;
+  top: calc(100% + 0.625rem);
+  right: 0;
+  min-width: 180px;
+  background: #1e331e;
+  border: 1px solid rgba(76, 175, 80, 0.35);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  padding: 0.35rem 0;
+  animation: dropdown-in 0.12s ease;
+}
+
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.home-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   width: 100%;
-  background: linear-gradient(135deg, rgba(76,175,80,0.08) 0%, rgba(255,255,255,0.04) 100%);
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+  color: #d4e8d4;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s;
+  text-align: left;
+}
+.home-dropdown-item:hover {
+  background: rgba(76, 175, 80, 0.15);
+}
+.home-dropdown-item--danger {
+  color: #ef9a9a;
+}
+.home-dropdown-item--danger:hover {
+  background: rgba(239, 83, 80, 0.15);
 }
 
-.home-ai-recipe {
-  flex: 0 0 calc(20% - 0.75rem);
+.home-dropdown-divider {
+  height: 1px;
+  background: rgba(76, 175, 80, 0.2);
+  margin: 0.3rem 0;
+}
+
+.home-dropdown-edit {
+  padding: 0.75rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
-
-.home-ai-response {
-  margin: 0.5rem 0 0;
-  font-size: 0.875rem;
+.home-dropdown-edit-label {
+  font-size: 0.8rem;
   color: #a8c5a8;
-  white-space: pre-wrap;
-  line-height: 1.5;
+  margin: 0;
 }
+.home-dropdown-edit-input {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(76,175,80,0.5);
+  color: #f0f7f0;
+  height: 2rem;
+  font-size: 0.85rem;
+}
+.home-dropdown-edit-error {
+  font-size: 0.75rem;
+  color: #ef9a9a;
+  margin: 0;
+}
+.home-dropdown-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.home-dropdown-edit-save,
+.home-dropdown-edit-cancel {
+  flex: 1;
+  padding: 0.3rem 0;
+  border-radius: 0.35rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: none;
+}
+.home-dropdown-edit-save {
+  background: #4caf50;
+  color: #fff;
+}
+.home-dropdown-edit-save:hover { background: #43a047; }
+.home-dropdown-edit-cancel {
+  background: rgba(255,255,255,0.1);
+  color: #d4e8d4;
+}
+.home-dropdown-edit-cancel:hover { background: rgba(255,255,255,0.18); }
 
 /* ── Content area ──────────────────────────────────────────────────────────── */
 .home-main {
