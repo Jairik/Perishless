@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Barcode, CircleUser, LogOut, UserPen, X, Upload, SendHorizonal, CheckCheck, Receipt, HeartHandshake, Package, Palette } from 'lucide-react'
+import { Barcode, CircleUser, LogOut, UserPen, X, Upload, SendHorizonal, CheckCheck, Receipt, HeartHandshake, Package, Palette, Mic, Square, Volume2, VolumeX } from 'lucide-react'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
 import type { Result, Exception } from '@zxing/library'
@@ -63,6 +63,7 @@ function Home() {
   const [aiMessage, setAiMessage] = useState('')
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
   const [aiLoading, setAiLoading] = useState(false)
+  const [autoSpeakEnabled, setAutoSpeakEnabled] = useState(() => localStorage.getItem('chat-auto-speak') === '1')
   const [carryFlying, setCarryFlying] = useState(false)
   const [dailyMoodEnabled, setDailyMoodEnabled] = useState(() => {
     const stored = localStorage.getItem('daily-mood-enabled')
@@ -361,7 +362,15 @@ function Home() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchActiveIdx, setSearchActiveIdx] = useState(0)
+  const [searchListening, setSearchListening] = useState(false)
+  const [chatListening, setChatListening] = useState(false)
+  const [chatSpeakingIdx, setChatSpeakingIdx] = useState<number | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
+  const searchRecorderRef = useRef<MediaRecorder | null>(null)
+  const chatRecorderRef = useRef<MediaRecorder | null>(null)
+  const searchStreamRef = useRef<MediaStream | null>(null)
+  const chatStreamRef = useRef<MediaStream | null>(null)
+  const currentSpeechAudioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     const q = searchQuery.trim()
@@ -1144,12 +1153,13 @@ function Home() {
   }
 
   // Send a chat message to Carry and append the assistant response.
-  async function handleAiSuggest() {
-    const msg = aiMessage.trim()
+  async function sendAiMessage(messageOverride?: string) {
+    const msg = (messageOverride ?? aiMessage).trim()
     if (!msg || aiLoading) return
+    if (!uuid) return
     const wasEmpty = chatMessages.length === 0
     setChatMessages(m => [...m, { role: 'user', content: msg }])
-    setAiMessage('')
+    if (!messageOverride) setAiMessage('')
     setAiLoading(true)
     if (wasEmpty) {
       setCarryFlying(true)
@@ -1158,13 +1168,157 @@ function Home() {
     try {
       const res = await fetch(`${API}/api/lm/${uuid}/${encodeURIComponent(msg)}`, { method: 'POST' })
       const data = await res.json()
-      setChatMessages(m => [...m, { role: 'assistant', content: data.response ?? JSON.stringify(data) }])
+      const assistantContent = data.response ?? JSON.stringify(data)
+      let assistantIdx = -1
+      setChatMessages(m => {
+        assistantIdx = m.length
+        return [...m, { role: 'assistant', content: assistantContent }]
+      })
+      if (autoSpeakEnabled && assistantIdx >= 0) {
+        window.setTimeout(() => { void speakAssistantMessage(assistantContent, assistantIdx) }, 0)
+      }
     } catch {
       setChatMessages(m => [...m, { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }])
     } finally {
       setAiLoading(false)
     }
   }
+
+  // Handle click/enter submission from the chat composer.
+  async function handleAiSuggest() {
+    await sendAiMessage()
+  }
+
+  // Toggle microphone capture and transcribe speech via backend STT endpoint.
+  async function toggleSpeechInput(target: 'search' | 'chat') {
+    const isSearch = target === 'search'
+    const isListening = isSearch ? searchListening : chatListening
+    const recorderRef = isSearch ? searchRecorderRef : chatRecorderRef
+    const streamRef = isSearch ? searchStreamRef : chatStreamRef
+    const setListening = isSearch ? setSearchListening : setChatListening
+
+    if (isListening) {
+      recorderRef.current?.stop()
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      const chunks: Blob[] = []
+
+      streamRef.current = stream
+      recorderRef.current = recorder
+      setListening(true)
+
+      recorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) chunks.push(e.data)
+      }
+
+      recorder.onstop = () => {
+        setListening(false)
+        streamRef.current?.getTracks().forEach(track => track.stop())
+        streamRef.current = null
+        recorderRef.current = null
+
+        const blob = new Blob(chunks, { type: 'audio/webm' })
+        if (!blob.size) return
+
+        void (async () => {
+          try {
+            const form = new FormData()
+            form.append('audio', blob, 'speech.webm')
+            const res = await fetch(`${API}/api/stt`, { method: 'POST', body: form })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || data.status !== 'success' || !data.text) return
+
+            const transcript = String(data.text).trim()
+            if (!transcript) return
+
+            if (isSearch) {
+              setSearchQuery(transcript)
+              setSearchOpen(true)
+            } else {
+              setAiMessage(transcript)
+              await sendAiMessage(transcript)
+            }
+          } catch {
+            // Ignore STT failures silently to avoid noisy UX.
+          }
+        })()
+      }
+
+      recorder.onerror = () => {
+        setListening(false)
+        streamRef.current?.getTracks().forEach(track => track.stop())
+        streamRef.current = null
+        recorderRef.current = null
+      }
+
+      recorder.start()
+    } catch {
+      setListening(false)
+    }
+  }
+
+  // Read assistant responses aloud via backend TTS endpoint.
+  async function speakAssistantMessage(text: string, idx: number) {
+    if (!text.trim()) return
+
+    if (chatSpeakingIdx === idx) {
+      currentSpeechAudioRef.current?.pause()
+      currentSpeechAudioRef.current = null
+      setChatSpeakingIdx(null)
+      return
+    }
+
+    currentSpeechAudioRef.current?.pause()
+    currentSpeechAudioRef.current = null
+    setChatSpeakingIdx(idx)
+
+    try {
+      const res = await fetch(`${API}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.status !== 'success' || !data.audio_base64) {
+        setChatSpeakingIdx(null)
+        return
+      }
+
+      const mime = String(data.mime_type || 'audio/mpeg')
+      const audio = new Audio(`data:${mime};base64,${data.audio_base64}`)
+      currentSpeechAudioRef.current = audio
+      audio.onended = () => {
+        if (chatSpeakingIdx === idx) setChatSpeakingIdx(null)
+      }
+      audio.onerror = () => {
+        if (chatSpeakingIdx === idx) setChatSpeakingIdx(null)
+      }
+      await audio.play()
+    } catch {
+      setChatSpeakingIdx(null)
+    }
+  }
+
+  useEffect(() => {
+    const searchRecorder = searchRecorderRef.current
+    const chatRecorder = chatRecorderRef.current
+    const searchStream = searchStreamRef.current
+    const chatStream = chatStreamRef.current
+    const speechAudio = currentSpeechAudioRef.current
+
+    return () => {
+      searchRecorder?.stop()
+      chatRecorder?.stop()
+      searchStream?.getTracks().forEach(track => track.stop())
+      chatStream?.getTracks().forEach(track => track.stop())
+      speechAudio?.pause()
+      currentSpeechAudioRef.current = null
+    }
+  }, [])
 
   // Match a health-impact hit back to its pantry item for detail rendering.
   function findPantryItemForHit(hit: HealthImpactHit) {
@@ -1390,8 +1544,17 @@ function Home() {
                     setSearchOpen(false)
                   }
                 }}
-                className="h-full bg-[rgba(255,255,255,0.08)] border-2 border-[#4caf50] text-[#f0f7f0] placeholder:text-[#a8c5a8] focus-visible:ring-[#4caf50]"
+                className="h-full pr-12 bg-[rgba(255,255,255,0.08)] border-2 border-[#4caf50] text-[#f0f7f0] placeholder:text-[#a8c5a8] focus-visible:ring-[#4caf50]"
               />
+              <button
+                className={`search-voice-btn${searchListening ? ' search-voice-btn--active' : ''}`}
+                type="button"
+                onClick={() => toggleSpeechInput('search')}
+                title={searchListening ? 'Stop listening' : 'Speak item name'}
+                aria-label={searchListening ? 'Stop listening' : 'Speak item name'}
+              >
+                {searchListening ? <Square size={14} /> : <Mic size={16} />}
+              </button>
               {searchOpen && (
                 <ul className="search-dropdown">
                   {searchLoading && (
@@ -1957,10 +2120,21 @@ function Home() {
                 {msg.role === 'assistant' ? (
                   <>
                     <img src="carry-icon.png" alt="Carry" className="carry-icon" />
-                    <div
-                      className="chat-bubble chat-bubble--assistant chat-bubble--md"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
-                    />
+                    <div className="chat-assistant-content">
+                      <div
+                        className="chat-bubble chat-bubble--assistant chat-bubble--md"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                      />
+                      <button
+                        type="button"
+                        className={`chat-voice-read-btn${chatSpeakingIdx === i ? ' chat-voice-read-btn--active' : ''}`}
+                        onClick={() => speakAssistantMessage(msg.content, i)}
+                        title={chatSpeakingIdx === i ? 'Stop speaking' : 'Read aloud'}
+                        aria-label={chatSpeakingIdx === i ? 'Stop speaking' : 'Read aloud'}
+                      >
+                        {chatSpeakingIdx === i ? <Square size={13} /> : <Volume2 size={14} />}
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <div className="chat-bubble chat-bubble--user">{msg.content}</div>
@@ -1990,6 +2164,25 @@ function Home() {
               rows={1}
               className="chat-input bg-[rgba(255,255,255,0.06)] border-2 border-[#4caf50] text-[#f0f7f0] placeholder:text-[#a8c5a8] focus-visible:ring-[#4caf50] resize-none"
             />
+            <Button
+              type="button"
+              onClick={() => setAutoSpeakEnabled(prev => {
+                const next = !prev
+                localStorage.setItem('chat-auto-speak', next ? '1' : '0')
+                return next
+              })}
+              className={`chat-auto-speak-btn${autoSpeakEnabled ? ' chat-auto-speak-btn--active' : ''}`}
+              title={autoSpeakEnabled ? 'Auto-Speak: On' : 'Auto-Speak: Off'}
+            >
+              {autoSpeakEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => toggleSpeechInput('chat')}
+              className={`chat-voice-input-btn${chatListening ? ' chat-voice-input-btn--active' : ''}`}
+            >
+              {chatListening ? <Square size={16} /> : <Mic size={16} />}
+            </Button>
             <Button
               onClick={handleAiSuggest}
               disabled={aiLoading || !aiMessage.trim()}

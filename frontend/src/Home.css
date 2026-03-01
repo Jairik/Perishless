@@ -60,6 +60,37 @@
   position: relative;
 }
 
+.search-voice-btn {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid rgba(76, 175, 80, 0.55);
+  border-radius: 0.45rem;
+  background: rgba(76, 175, 80, 0.12);
+  color: #a8c5a8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  z-index: 2;
+}
+
+.search-voice-btn:hover {
+  background: rgba(76, 175, 80, 0.26);
+  color: #f0f7f0;
+  border-color: #81c784;
+}
+
+.search-voice-btn--active {
+  background: rgba(239, 83, 80, 0.2);
+  border-color: rgba(239, 83, 80, 0.55);
+  color: #efb5b5;
+}
+
 .home-search-receipt {
   flex: 0 0 calc(20% - 1.5rem);
   height: 2.75rem;
@@ -1031,6 +1062,77 @@
   flex: 1;
   max-height: 140px;
   overflow-y: auto !important;
+}
+
+.chat-assistant-content {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.chat-voice-read-btn {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(76, 175, 80, 0.35);
+  background: rgba(76, 175, 80, 0.12);
+  color: #a8c5a8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.chat-voice-read-btn:hover {
+  background: rgba(76, 175, 80, 0.22);
+  border-color: rgba(76, 175, 80, 0.55);
+  color: #f0f7f0;
+}
+
+.chat-voice-read-btn--active {
+  background: rgba(239, 83, 80, 0.2);
+  border-color: rgba(239, 83, 80, 0.55);
+  color: #efb5b5;
+}
+
+.chat-voice-input-btn {
+  background: rgba(76, 175, 80, 0.16);
+  border: 2px solid rgba(76, 175, 80, 0.45);
+  color: #f0f7f0;
+  padding: 0 0.65rem;
+  align-self: stretch;
+}
+
+.chat-auto-speak-btn {
+  background: rgba(76, 175, 80, 0.14);
+  border: 2px solid rgba(76, 175, 80, 0.38);
+  color: #cfe6cf;
+  padding: 0 0.65rem;
+  align-self: stretch;
+}
+
+.chat-auto-speak-btn:hover {
+  background: rgba(76, 175, 80, 0.28);
+  border-color: #81c784;
+}
+
+.chat-auto-speak-btn--active {
+  background: rgba(76, 175, 80, 0.32);
+  border-color: rgba(76, 175, 80, 0.7);
+  color: #f0f7f0;
+}
+
+.chat-voice-input-btn:hover {
+  background: rgba(76, 175, 80, 0.32);
+  border-color: #81c784;
+}
+
+.chat-voice-input-btn--active {
+  background: rgba(239, 83, 80, 0.2);
+  border-color: rgba(239, 83, 80, 0.65);
+  color: #efb5b5;
 }
 
 /* ── Placeholder ───────────────────────────────────────────────────────────── */

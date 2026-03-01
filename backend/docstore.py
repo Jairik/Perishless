@@ -7,7 +7,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # Authenticate with Firebase using the service account key JSON file
-_KEY_PATH = os.path.join(os.path.dirname(__file__), "perishless-3c73c-firebase-adminsdk-fbsvc-17d12425cf.json")
+_KEY_PATH = os.getenv("FIREBASE_KEY_PATH") or os.path.join(os.path.dirname(__file__), "perishless-3c73c-firebase-adminsdk-fbsvc-17d12425cf.json")
 cred = credentials.Certificate(_KEY_PATH)
 firebase_admin.initialize_app(cred)
 

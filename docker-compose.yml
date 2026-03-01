@@ -19,3 +19,7 @@ services:
       - backend
     ports:
       - "3000:80"
+    volumes:
+      - ~/firebase.json:/app/firebase.json
+    environement:
+      - FIREBASE_KEY_PATH: /app/firebase.json

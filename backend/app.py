@@ -1,9 +1,10 @@
 # Main entry point for the FastAPI backend, where all API endpoints are defined and implemented
 import asyncio
+import base64
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
@@ -12,6 +13,7 @@ from oof import get_product_info, find_products_by_name
 from lm import generate_recipe_recommendation, generate_expiry_recipe, gemini_chat_response, fill_item_details_from_name, generate_perishthreats, parse_receipt_items, analyze_health_impacts, generate_daily_motivational_quote
 from scan_doc import detect_barcode, ocr_receipt
 from rdb import ensure_autocomplete_table, autocomplete_food_items, upsert_food_name, update_product_image, find_barcode_by_name
+from tts import text_to_speech, speech_to_text
 
 # Server-side pantry cache keyed by uuid — avoids redundant Firestore reads
 _pantry_cache: dict[str, list] = {}
@@ -378,6 +380,12 @@ class FavoriteRecipeRequest(BaseModel):
     signature: str | None = None
     recipe: dict[str, Any]
 
+
+class TTSRequest(BaseModel):
+    text: str
+    voice_id: str | None = None
+    model_id: str = "eleven_multilingual_v2"
+
 # Regenerate PerishThreats with optional custom instructions
 @app.post("/api/perishthreats/{uuid}")
 async def regenerate_perishthreats(uuid: str, body: RegenerateThreatsRequest):
@@ -433,6 +441,52 @@ async def get_favorites(uuid: str, limit: int = 300):
         return {"status": "success", "results": rows}
     except Exception:
         return {"status": "error", "message": "Failed to fetch favorited recipes.", "results": []}
+
+
+# Convert text to speech audio using ElevenLabs
+@app.post("/api/tts")
+async def tts(body: TTSRequest):
+    cleaned = body.text.strip()
+    if not cleaned:
+        return {"status": "error", "message": "Text cannot be empty."}
+    try:
+        audio = await run_in_threadpool(text_to_speech, cleaned, body.voice_id, body.model_id)
+        encoded = base64.b64encode(audio).decode("utf-8")
+        return {
+            "status": "success",
+            "mime_type": "audio/mpeg",
+            "audio_base64": encoded,
+        }
+    except Exception:
+        return {"status": "error", "message": "Failed to synthesize speech."}
+
+
+# Convert uploaded speech audio to text using ElevenLabs
+@app.post("/api/stt")
+async def stt(
+    audio: UploadFile = File(...),
+    model_id: str = Form("scribe_v1"),
+    language_code: str | None = Form(None),
+):
+    try:
+        audio_bytes = await audio.read()
+        if not audio_bytes:
+            return {"status": "error", "message": "Audio file is empty."}
+
+        transcript = await run_in_threadpool(
+            speech_to_text,
+            audio_bytes,
+            audio.filename or "audio.webm",
+            audio.content_type or "audio/webm",
+            model_id,
+            language_code,
+        )
+        if not transcript:
+            return {"status": "error", "message": "No speech recognized."}
+
+        return {"status": "success", "text": transcript}
+    except Exception:
+        return {"status": "error", "message": "Failed to transcribe speech."}
 
 
 # Generate a single expiry-prioritised recipe as structured JSON, scoped to user uuid
