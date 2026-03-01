@@ -7,6 +7,11 @@ from typing import Any
 import firebase_admin
 from firebase_admin import credentials, firestore
 
+ALLOWED_POST_TAGS = {"food giveaway", "recipe reccomendation", "misc"}
+POST_TAG_ALIASES = {
+    "recipe recommendation": "recipe reccomendation",
+}
+
 # Authenticate with Firebase using layered credential fallbacks
 def _resolve_firebase_key_path() -> str | None:
     """Resolve a usable Firebase service-account JSON path with multiple fallbacks."""
@@ -473,3 +478,64 @@ def toggle_post_kind(post_id: str, actor_uuid: str) -> dict[str, Any] | None:
         "kind_count": kind_count,
         "user_kinded": user_kinded,
     }
+
+
+def normalize_post_tag(tag: str) -> str | None:
+    """Normalize and validate post tags."""
+    normalized = (tag or "").strip().lower()
+    normalized = POST_TAG_ALIASES.get(normalized, normalized)
+    if normalized in ALLOWED_POST_TAGS:
+        return normalized
+    return None
+
+
+def list_posts_payload(tag: str = "all", limit: int = 200) -> dict[str, Any]:
+    """Return API-ready payload for listing posts with validation."""
+    normalized = (tag or "all").strip().lower()
+    if normalized != "all":
+        normalized = POST_TAG_ALIASES.get(normalized, normalized)
+    if normalized != "all" and normalized not in ALLOWED_POST_TAGS:
+        return {"status": "error", "message": "Invalid tag filter.", "results": []}
+
+    rows = get_posts(normalized, limit)
+    return {"status": "success", "results": rows}
+
+
+def create_post_payload(uuid: str, author_name: str, content: str, tag: str, location: str | None = None) -> dict[str, Any]:
+    """Validate, create, and return API-ready payload for a global post."""
+    actor = (uuid or "").strip()
+    if not actor:
+        return {"status": "error", "message": "Missing user id."}
+
+    cleaned_content = (content or "").strip()
+    if not cleaned_content:
+        return {"status": "error", "message": "Post content cannot be empty."}
+
+    normalized_tag = normalize_post_tag(tag)
+    if not normalized_tag:
+        return {"status": "error", "message": "Invalid post tag."}
+
+    cleaned_location = (location or "").strip()
+    if normalized_tag == "food giveaway" and not cleaned_location:
+        return {"status": "error", "message": "Location is required for food giveaway posts."}
+
+    item = create_post(
+        actor,
+        (author_name or "").strip() or "Anonymous",
+        cleaned_content,
+        normalized_tag,
+        cleaned_location or None,
+    )
+    return {"status": "success", "item": item}
+
+
+def toggle_post_kind_payload(post_id: str, actor_uuid: str) -> dict[str, Any]:
+    """Toggle kind interaction and return API-ready payload."""
+    actor = (actor_uuid or "").strip()
+    if not actor:
+        return {"status": "error", "message": "Missing user id."}
+
+    result = toggle_post_kind(post_id, actor)
+    if not result:
+        return {"status": "error", "message": "Post not found."}
+    return {"status": "success", **result}
