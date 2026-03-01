@@ -13,7 +13,7 @@ import type { IScannerControls } from '@zxing/browser'
 import type { Result, Exception } from '@zxing/library'
 import './Home.css'
 
-const API = import.meta.env.VITE_API_BASE_URL?.trim() || (import.meta.env.DEV ? 'http://localhost:8000' : '')
+const API = import.meta.env.VITE_API_BASE_URL || '/api';
 
 // Configure marked once at module level
 marked.setOptions({ breaks: true, gfm: true })
@@ -141,7 +141,7 @@ function Home() {
     setManualAddLoading(true)
     setManualAddError('')
     try {
-      const res = await fetch(`${API}/api/items/${uuid}`, {
+      const res = await fetch(`${API}/items/${uuid}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -172,7 +172,7 @@ function Home() {
     setSearchOpen(false)
     setSearchQuery('')
     try {
-      const res = await fetch(`${API}/api/items/${uuid}`, {
+      const res = await fetch(`${API}/items/${uuid}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), image_url: image_url ?? null, barcode: barcode ?? null }),
@@ -227,6 +227,7 @@ function Home() {
     item_id?: string
     name: string
     reason: string
+    risk_level?: string | null
   }
   const [perishThreats, setPerishThreats] = useState<PerishThreat[]>([])
   const [threatsLoading, setThreatsLoading] = useState(false)
@@ -301,7 +302,7 @@ function Home() {
     setFavoriteRecipesLoading(true)
     setFavoriteRecipesError('')
     try {
-      const res = await fetch(`${API}/api/favorites/${uuid}`)
+      const res = await fetch(`${API}/favorites/${uuid}`)
       const raw = await res.text()
       let data: { status?: string; message?: string; results?: FavoritedRecipe[] } = {}
       try {
@@ -334,7 +335,7 @@ function Home() {
     setGlobalError('')
     try {
       const query = globalFilterTag === 'all' ? '' : `?tag=${encodeURIComponent(globalFilterTag)}`
-      const res = await fetch(`${API}/api/posts${query}`)
+      const res = await fetch(`${API}/posts${query}`)
       const raw = await res.text()
       let data: { status?: string; message?: string; results?: GlobalPost[] } = {}
       try {
@@ -413,7 +414,7 @@ function Home() {
     setPostSubmitting(true)
     setPostError('')
     try {
-      const res = await fetch(`${API}/api/posts`, {
+      const res = await fetch(`${API}/posts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -448,7 +449,7 @@ function Home() {
     if (reactionPending.has(pendingKey)) return
     setReactionPending(prev => new Set(prev).add(pendingKey))
     try {
-      const res = await fetch(`${API}/api/posts/${postId}/react`, {
+      const res = await fetch(`${API}/posts/${postId}/react`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uuid, reaction }),
@@ -507,7 +508,7 @@ function Home() {
     setFavoritePending(prev => new Set(prev).add(signature))
     try {
       if (currentlyFavorited) {
-        const res = await fetch(`${API}/api/favorites/${uuid}`, {
+        const res = await fetch(`${API}/favorites/${uuid}`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ signature, recipe }),
@@ -516,7 +517,7 @@ function Home() {
         if (!res.ok || data.status !== 'success') throw new Error(data.message ?? 'Failed to unfavorite')
         setFavoriteRecipes(prev => prev.filter(r => (r.recipe_signature ?? '') !== signature))
       } else {
-        const res = await fetch(`${API}/api/favorites/${uuid}`, {
+        const res = await fetch(`${API}/favorites/${uuid}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ signature, recipe }),
@@ -597,7 +598,7 @@ function Home() {
       setSearchLoading(true)
       setSearchOpen(true)
       try {
-        const res = await fetch(`${API}/api/autocomplete?q=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal })
+        const res = await fetch(`${API}/autocomplete?q=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal })
         const data = await res.json()
         if (!cancelled) {
           const results: { name: string; image_url?: string; barcode?: string }[] = data.results ?? []
@@ -612,7 +613,7 @@ function Home() {
     const slowTimer = setTimeout(async () => {
       if (cancelled) return
       try {
-        const res = await fetch(`${API}/api/searchItem/${encodeURIComponent(q)}`, { signal: controller.signal })
+        const res = await fetch(`${API}/searchItem/${encodeURIComponent(q)}`, { signal: controller.signal })
         const data = await res.json()
         if (!cancelled) {
           const fresh: { name: string; image_url?: string; barcode?: string }[] = data.results ?? []
@@ -646,7 +647,7 @@ function Home() {
     if (missing.length === 0) return
     let cancelled = false
     missing.forEach(item => {
-      fetch(`${API}/api/image/${encodeURIComponent(item.barcode!)}`)
+      fetch(`${API}/image/${encodeURIComponent(item.barcode!)}`)
         .then(r => r.json())
         .then(data => {
           if (cancelled || !data.image_url) return
@@ -681,7 +682,7 @@ function Home() {
     if (!uuid) return
     setPantryLoading(true)
     try {
-      const res = await fetch(`${API}/api/items/${uuid}`)
+      const res = await fetch(`${API}/items/${uuid}`)
       const data = await res.json()
       setPantryItems(Array.isArray(data) ? data : [])
     } catch {
@@ -708,7 +709,7 @@ function Home() {
     if (!uuid) return
     setThreatsLoading(true)
     try {
-      const res = await fetch(`${API}/api/perishthreats/${uuid}`)
+      const res = await fetch(`${API}/perishthreats/${uuid}`)
       const data = await res.json()
       setPerishThreats(Array.isArray(data) ? data : [])
       setCollapsedThreats(new Set())
@@ -724,7 +725,7 @@ function Home() {
     if (!uuid || threatsLoading) return
     setThreatsLoading(true)
     try {
-      const res = await fetch(`${API}/api/perishthreats/${uuid}`, {
+      const res = await fetch(`${API}/perishthreats/${uuid}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instructions: ptInstructions.trim() || null, count: 2 }),
@@ -792,7 +793,7 @@ function Home() {
     setMoodError('')
     setMoodQuote('')
     try {
-      const res = await fetch(`${API}/api/moodQuote/${uuid}`, {
+      const res = await fetch(`${API}/moodQuote/${uuid}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ score: moodScore }),
@@ -854,7 +855,7 @@ function Home() {
 
       try {
         while (!cancelled) {
-          const res = await fetch(`${API}/api/healthImpacts/${uuid}?offset=${offset}&limit=${limit}`)
+          const res = await fetch(`${API}/healthImpacts/${uuid}?offset=${offset}&limit=${limit}`)
           const raw = await res.text()
           let data: {
             status?: string
@@ -924,7 +925,7 @@ function Home() {
     setHistoryLoading(true)
     setHistoryError('')
     try {
-      const res = await fetch(`${API}/api/history/${uuid}`)
+      const res = await fetch(`${API}/history/${uuid}`)
       const raw = await res.text()
       let data: { status?: string; message?: string; results?: Record<string, unknown>[] } = {}
       try {
@@ -997,7 +998,7 @@ function Home() {
     try {
       const form = new FormData()
       form.append('image', file)
-      const res = await fetch(`${API}/api/scanReceipt/${uuid}`, { method: 'POST', body: form })
+      const res = await fetch(`${API}/scanReceipt/${uuid}`, { method: 'POST', body: form })
       const raw = await res.text()
       let data: { status?: string; message?: string; items?: string[] } = {}
       try {
@@ -1069,7 +1070,7 @@ function Home() {
     try {
       const form = new FormData()
       form.append('image', file)
-      const res = await fetch(`${API}/api/items/${uuid}/barcode`, { method: 'POST', body: form })
+      const res = await fetch(`${API}/items/${uuid}/barcode`, { method: 'POST', body: form })
       const data = await res.json()
       if (data.status === 'success') {
         setBarcodeStatus('success')
@@ -1241,6 +1242,22 @@ function Home() {
     return cleaned ? `↑ ${cleaned}` : '↑ Health Risk'
   }
 
+  function getHealthRiskLevel(value?: string | null): 'low' | 'medium' | 'high' {
+    const text = (value ?? '').trim().toLowerCase()
+    if (text === 'low' || text === 'medium' || text === 'high') return text
+    if (text === 'med' || text === 'moderate' || text === 'mid') return 'medium'
+    if (text === 'mild' || text === 'minor' || text === 'slight') return 'low'
+    if (text === 'severe' || text === 'elevated' || text === 'very high') return 'high'
+    return 'medium'
+  }
+
+  function getHealthRiskMeta(value?: string | null): { label: string; cls: string } {
+    const level = getHealthRiskLevel(value)
+    if (level === 'low') return { label: 'Low Risk', cls: 'health-risk-pill health-risk-pill--low' }
+    if (level === 'high') return { label: 'High Risk', cls: 'health-risk-pill health-risk-pill--high' }
+    return { label: 'Medium Risk', cls: 'health-risk-pill health-risk-pill--medium' }
+  }
+
   function getMapEmbedUrl(location: string): string {
     return `https://www.google.com/maps?q=${encodeURIComponent(location)}&output=embed`
   }
@@ -1256,7 +1273,7 @@ function Home() {
     setTimeout(async () => {
       try {
         setPantryItems(prev => prev.filter(p => p.item_id !== itemId))
-        const res = await fetch(`${API}/api/items/${uuid}/${itemId}?consumed=true`, { method: 'DELETE' })
+        const res = await fetch(`${API}/items/${uuid}/${itemId}?consumed=true`, { method: 'DELETE' })
         if (!res.ok) throw new Error('Delete failed')
       } catch {
         console.error('Failed to consume item')
@@ -1278,7 +1295,7 @@ function Home() {
     setTimeout(async () => {
       try {
         setPantryItems(prev => prev.filter(p => p.item_id !== itemId))
-        const res = await fetch(`${API}/api/items/${uuid}/${itemId}?consumed=false`, { method: 'DELETE' })
+        const res = await fetch(`${API}/items/${uuid}/${itemId}?consumed=false`, { method: 'DELETE' })
         if (!res.ok) throw new Error('Delete failed')
       } catch {
         console.error('Failed to throw away item')
@@ -1311,7 +1328,7 @@ function Home() {
     // Fire all DELETEs concurrently; if any fail, restore only failed items from snapshot
     const results = await Promise.allSettled(
       toConsume.map(item =>
-        fetch(`${API}/api/items/${uuid}/${item.item_id}?consumed=true`, { method: 'DELETE' })
+        fetch(`${API}/items/${uuid}/${item.item_id}?consumed=true`, { method: 'DELETE' })
       )
     )
 
@@ -1388,7 +1405,7 @@ function Home() {
       setTimeout(() => setCarryFlying(false), 500)
     }
     try {
-      const res = await fetch(`${API}/api/lm/${uuid}/${encodeURIComponent(msg)}`, { method: 'POST' })
+      const res = await fetch(`${API}/lm/${uuid}/${encodeURIComponent(msg)}`, { method: 'POST' })
       const data = await res.json()
       const assistantContent = data.response ?? JSON.stringify(data)
       let assistantIdx = -1
@@ -1450,7 +1467,7 @@ function Home() {
           try {
             const form = new FormData()
             form.append('audio', blob, 'speech.webm')
-            const res = await fetch(`${API}/api/stt`, { method: 'POST', body: form })
+            const res = await fetch(`${API}/stt`, { method: 'POST', body: form })
             const data = await res.json().catch(() => ({}))
             if (!res.ok || data.status !== 'success' || !data.text) return
 
@@ -1499,7 +1516,7 @@ function Home() {
     setChatSpeakingIdx(idx)
 
     try {
-      const res = await fetch(`${API}/api/tts`, {
+      const res = await fetch(`${API}/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -1722,7 +1739,7 @@ function Home() {
           Global Feed
         </button>
         <button className={`home-tab ${activePage === 'health' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('health')} data-hint="AI analysis of potential mental and physical health risks">
-          Health Impacts
+          Nutrient Radar
         </button>
         <button className={`home-tab ${activePage === 'ai' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('ai')} data-hint="Chat with Carry the chatbot to learn more about your pantry">
           Carry AI Assistant
@@ -2375,6 +2392,7 @@ function Home() {
                       const key = (hit.item_id && hit.item_id.trim()) || `${hit.name.toLowerCase()}-${idx}`
                       const collapsed = !healthCollapsedMental.has(key)
                       const matched = findPantryItemForHit(hit)
+                      const riskMeta = getHealthRiskMeta(hit.risk_level)
                       return (
                         <div key={`mental-${key}`} className={`health-item-card${collapsed ? ' health-item-card--collapsed' : ''}`}>
                           <button className="health-item-header" onClick={() => toggleHealthMental(key)}>
@@ -2386,7 +2404,10 @@ function Home() {
                           </button>
                           {!collapsed && (
                             <div className="health-item-body">
-                              <p className="health-item-summary">{hit.reason}</p>
+                              <div className="health-item-summary-row">
+                                <p className="health-item-summary">{hit.reason}</p>
+                                <span className={riskMeta.cls}>{riskMeta.label}</span>
+                              </div>
                               {matched ? (
                                 <div className="health-item-details">
                                                   {renderPantryDetailContent(matched)}
@@ -2413,6 +2434,7 @@ function Home() {
                       const key = (hit.item_id && hit.item_id.trim()) || `${hit.name.toLowerCase()}-${idx}`
                       const collapsed = !healthCollapsedPhysical.has(key)
                       const matched = findPantryItemForHit(hit)
+                      const riskMeta = getHealthRiskMeta(hit.risk_level)
                       return (
                         <div key={`physical-${key}`} className={`health-item-card${collapsed ? ' health-item-card--collapsed' : ''}`}>
                           <button className="health-item-header" onClick={() => toggleHealthPhysical(key)}>
@@ -2424,7 +2446,10 @@ function Home() {
                           </button>
                           {!collapsed && (
                             <div className="health-item-body">
-                              <p className="health-item-summary">{hit.reason}</p>
+                              <div className="health-item-summary-row">
+                                <p className="health-item-summary">{hit.reason}</p>
+                                <span className={riskMeta.cls}>{riskMeta.label}</span>
+                              </div>
                               {matched ? (
                                 <div className="health-item-details">
                                   {renderPantryDetailContent(matched)}
