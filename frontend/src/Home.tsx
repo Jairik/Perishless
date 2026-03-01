@@ -13,7 +13,7 @@ import type { IScannerControls } from '@zxing/browser'
 import type { Result, Exception } from '@zxing/library'
 import './Home.css'
 
-const API = 'http://localhost:8000'
+const API = import.meta.env.VITE_API_BASE_URL?.trim() || (import.meta.env.DEV ? 'http://localhost:8000' : '')
 
 // Configure marked once at module level
 marked.setOptions({ breaks: true, gfm: true })
