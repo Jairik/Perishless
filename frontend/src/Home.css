@@ -203,8 +203,8 @@
 
 /* Idle centered Carry icon */
 .carry-center-icon {
-  width: 5rem;
-  height: 5rem;
+  width: 7.5rem;
+  height: 7.5rem;
   border-radius: 50%;
   object-fit: cover;
 }
@@ -214,16 +214,16 @@
   0% {
     top: 50%;
     left: 50%;
-    width: 5rem;
-    height: 5rem;
+    width: 7.5rem;
+    height: 7.5rem;
     transform: translate(-50%, -50%);
     opacity: 1;
   }
   100% {
     top: 1.8rem;
     left: 1.5rem;
-    width: 2rem;
-    height: 2rem;
+    width: 3rem;
+    height: 3rem;
     transform: translate(0, 0);
     opacity: 1;
   }
@@ -249,8 +249,8 @@
 .chat-bubble-wrap--assistant { justify-content: flex-start; align-items: flex-start; }
 
 .carry-icon {
-  width: 2rem;
-  height: 2rem;
+  width: 3rem;
+  height: 3rem;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -864,6 +864,27 @@
   white-space: nowrap;
 }
 
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable-th:hover {
+  color: #c8e6c9;
+}
+
+.sort-icon {
+  display: inline-block;
+  margin-left: 0.4em;
+  font-size: 1.2em;
+  color: #c8e6c9;
+  vertical-align: middle;
+}
+
+.sort-icon--inactive {
+  color: #5a7a5a;
+}
+
 .pantry-table tbody tr {
   border-bottom: 1px solid rgba(76, 175, 80, 0.1);
   transition: background 0.15s;
@@ -935,6 +956,105 @@
 .tag-category { background: rgba(255,255,255,0.08); color: #c8dfc8; text-transform: capitalize; }
 .tag-donate   { background: rgba(33, 150, 243, 0.2); color: #90caf9; }
 .tag-vegan    { background: rgba(76, 175, 80, 0.2);  color: #a5d6a7; }
+
+/* ── Pantry item hover tooltip ── */
+.item-tooltip {
+  position: fixed;
+  z-index: 999;
+  width: 560px;
+  background: #1a2e1a;
+  border: 1.5px solid rgba(76, 175, 80, 0.4);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.item-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.item-tooltip-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1.5rem;
+  align-items: start;
+}
+
+.item-tooltip-img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 0.4rem;
+  background: rgba(255,255,255,0.04);
+  flex-shrink: 0;
+}
+
+.item-tooltip-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #c8e6c9;
+  margin: 0;
+  word-break: break-word;
+}
+
+.item-tooltip-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.75rem;
+  align-items: center;
+}
+
+.item-tooltip-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8aac8a;
+  white-space: nowrap;
+}
+
+.item-tooltip-expiry {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+}
+
+.item-tooltip-nutri {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.3rem;
+}
+
+.item-tooltip-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-top: 1px solid rgba(76,175,80,0.15);
+  padding-top: 0.5rem;
+}
+
+.item-tooltip-text {
+  font-size: 0.78rem;
+  color: #a8c5a8;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.item-tooltip-text--clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .tag-nutri    { font-weight: 700; }
 .tag-nutri-a  { background: #1a7a1a; color: #fff; }
 .tag-nutri-b  { background: #4a8a2a; color: #fff; }
@@ -957,7 +1077,7 @@
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
   white-space: nowrap;
 }
 
@@ -965,6 +1085,25 @@
   background: rgba(76, 175, 80, 0.3);
   border-color: rgba(76, 175, 80, 0.6);
   color: #f0f7f0;
+}
+
+.pt-consume-btn:active,
+.pt-consume-btn--active {
+  transform: scale(0.92);
+  background: rgba(76, 175, 80, 0.5);
+  border-color: #81c784;
+  color: #fff;
+}
+
+@keyframes row-consume {
+  0%   { opacity: 1;   transform: translateX(0);     background: transparent; }
+  25%  { opacity: 1;   transform: translateX(0);     background: rgba(76, 175, 80, 0.18); }
+  100% { opacity: 0;   transform: translateX(60px);  background: rgba(76, 175, 80, 0); }
+}
+
+.row-consuming {
+  animation: row-consume 0.42s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+  pointer-events: none;
 }
 
 /* Days sub-label inside expiry badge */
@@ -992,8 +1131,8 @@
 }
 
 .pt-loading-logo {
-  width: 72px;
-  height: 72px;
+  width: 108px;
+  height: 108px;
   object-fit: contain;
   animation: pt-spin 1.2s linear infinite;
 }
@@ -1006,8 +1145,66 @@
 .pt-page {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem 2rem;
+  gap: 2rem;
+  padding: 2rem 2.5rem;
+}
+
+/* Regenerate toolbar */
+.pt-regen-bar {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.pt-regen-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid rgba(76, 175, 80, 0.4);
+  border-radius: 0.6rem;
+  padding: 0.7rem 1rem;
+  color: #f0f7f0;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.pt-regen-input::placeholder {
+  color: #8aac8a;
+}
+
+.pt-regen-input:focus {
+  border-color: #4caf50;
+}
+
+.pt-regen-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pt-regen-btn {
+  flex-shrink: 0;
+  padding: 0.7rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 0.6rem;
+  border: 2px solid #4caf50;
+  background: rgba(76, 175, 80, 0.15);
+  color: #c8e6c9;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.pt-regen-btn:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.3);
+  border-color: #81c784;
+  color: #f0f7f0;
+}
+
+.pt-regen-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .pt-empty {
@@ -1029,14 +1226,35 @@
   overflow: hidden;
 }
 
-/* Card header */
+/* Card header — acts as a toggle button */
 .pt-threat-header {
   display: flex;
   align-items: baseline;
   gap: 1rem;
-  padding: 0.85rem 1.25rem;
+  padding: 1.1rem 1.5rem;
   background: rgba(76, 175, 80, 0.1);
   border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+  border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+  transition: background 0.15s;
+}
+
+.pt-threat-header:hover {
+  background: rgba(76, 175, 80, 0.17);
+}
+
+.pt-threat-card--collapsed .pt-threat-header {
+  border-bottom: none;
+}
+
+.pt-threat-chevron {
+  margin-left: auto;
+  font-size: 1rem;
+  color: #8aac8a;
+  flex-shrink: 0;
 }
 
 .pt-threat-meal-type {
@@ -1056,7 +1274,7 @@
 /* Three-column body */
 .pt-threat-body {
   display: flex;
-  min-height: 240px;
+  min-height: 260px;
 }
 
 /* Left — image */
@@ -1064,6 +1282,11 @@
   flex: 0 0 22%;
   overflow: hidden;
   border-right: 1px solid rgba(76, 175, 80, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+  box-sizing: border-box;
 }
 
 .pt-threat-img {
@@ -1071,6 +1294,9 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: 6px;
+  border: 1.5px solid rgba(76, 175, 80, 0.35);
+  box-sizing: border-box;
 }
 
 .pt-threat-img-placeholder {
@@ -1115,15 +1341,15 @@
 /* Right — ingredients */
 .pt-threat-ing-col {
   flex: 1;
-  padding: 0.85rem 1rem;
+  padding: 1rem 1.25rem;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.65rem;
 }
 
 .pt-threat-ing-title {
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.65rem;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.07em;
@@ -1137,7 +1363,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.6rem;
 }
 
 .pt-threat-ing-item {
@@ -1145,7 +1371,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.3rem 0.5rem;
+  padding: 0.45rem 0.7rem;
   border-radius: 0.4rem;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(76, 175, 80, 0.1);

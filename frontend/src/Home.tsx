@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Barcode, CircleUser, LogOut, UserPen, X, Upload, SendHorizonal, CheckCheck } from 'lucide-react'
+import { Barcode, CircleUser, LogOut, UserPen, X, Upload, SendHorizonal, CheckCheck, Receipt, HeartHandshake } from 'lucide-react'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
 import type { Result, Exception } from '@zxing/library'
@@ -37,10 +37,49 @@ function Home() {
   // Pantry items
   const [pantryItems, setPantryItems] = useState<any[]>([])
   const [pantryLoading, setPantryLoading] = useState(false)
+  const [sortCol, setSortCol] = useState<'name' | 'expiry' | 'tags' | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [consumingItems, setConsumingItems] = useState<Set<string>>(new Set())
+  const [hoveredItem, setHoveredItem] = useState<Record<string, unknown> | null>(null)
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  function handleSort(col: 'name' | 'expiry' | 'tags') {
+    if (sortCol !== col) {
+      setSortCol(col)
+      setSortDir('asc')
+    } else if (sortDir === 'asc') {
+      setSortDir('desc')
+    } else {
+      setSortCol(null)
+      setSortDir('asc')
+    }
+  }
+
+  function sortIcon(col: 'name' | 'expiry' | 'tags') {
+    if (sortCol !== col) return <span className="sort-icon sort-icon--inactive">⇅</span>
+    return <span className="sort-icon">{sortDir === 'asc' ? '↑' : '↓'}</span>
+  }
 
   // PerishThreats
-  const [perishThreats, setPerishThreats] = useState<any[]>([])
+  interface PerishThreat {
+    meal_type?: string
+    description?: string
+    image_url?: string
+    youtube_url?: string
+    ingredients?: Array<{ name: string; image_url?: string; expiry_date?: any; in_inventory?: boolean }>
+  }
+  const [perishThreats, setPerishThreats] = useState<PerishThreat[]>([])
   const [threatsLoading, setThreatsLoading] = useState(false)
+  const [ptInstructions, setPtInstructions] = useState('')
+  const [collapsedThreats, setCollapsedThreats] = useState<Set<number>>(new Set())
+
+  function toggleThreat(i: number) {
+    setCollapsedThreats(prev => {
+      const next = new Set(prev)
+      if (next.has(i)) { next.delete(i) } else { next.add(i) }
+      return next
+    })
+  }
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -50,26 +89,59 @@ function Home() {
   const searchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
+    const q = searchQuery.trim()
+    if (!q) {
       setSearchResults([])
       setSearchOpen(false)
       setSearchLoading(false)
       return
     }
+
     const controller = new AbortController()
-    const timer = setTimeout(async () => {
+    let cancelled = false
+
+    // Tier-1: fast local autocomplete at 250ms
+    const fastTimer = setTimeout(async () => {
+      if (cancelled) return
       setSearchLoading(true)
       setSearchOpen(true)
       try {
-        const res = await fetch(`${API}/api/searchItem/${encodeURIComponent(searchQuery.trim())}`, { signal: controller.signal })
+        const res = await fetch(`${API}/api/autocomplete?q=${encodeURIComponent(q)}&limit=10`, { signal: controller.signal })
         const data = await res.json()
-        setSearchResults(data.results ?? [])
-        setSearchOpen((data.results ?? []).length > 0)
-      } catch { /* aborted or network error */ }
-      finally { setSearchLoading(false) }
-    }, 1000)
+        if (!cancelled) {
+          const results: { name: string; image_url?: string }[] = data.results ?? []
+          setSearchResults(results)
+          setSearchOpen(results.length > 0)
+        }
+      } catch { /* aborted */ }
+    }, 250)
+
+    // Tier-2: broader product search at 500ms — merges with / replaces fast results
+    const slowTimer = setTimeout(async () => {
+      if (cancelled) return
+      try {
+        const res = await fetch(`${API}/api/searchItem/${encodeURIComponent(q)}`, { signal: controller.signal })
+        const data = await res.json()
+        if (!cancelled) {
+          const fresh: { name: string; image_url?: string }[] = data.results ?? []
+          if (fresh.length > 0) {
+            // Merge: keep any fast results not already in the broader set
+            setSearchResults(prev => {
+              const names = new Set(fresh.map(r => r.name.toLowerCase()))
+              const extras = prev.filter(r => !names.has(r.name.toLowerCase()))
+              return [...fresh, ...extras].slice(0, 15)
+            })
+            setSearchOpen(true)
+          }
+        }
+      } catch { /* aborted */ }
+      finally { if (!cancelled) setSearchLoading(false) }
+    }, 500)
+
     return () => {
-      clearTimeout(timer)
+      cancelled = true
+      clearTimeout(fastTimer)
+      clearTimeout(slowTimer)
       controller.abort()
       setSearchLoading(false)
     }
@@ -114,12 +186,32 @@ function Home() {
       const res = await fetch(`${API}/api/perishthreats/${uuid}`)
       const data = await res.json()
       setPerishThreats(Array.isArray(data) ? data : [])
+      setCollapsedThreats(new Set())
     } catch {
       console.error('Failed to fetch perishthreats')
     } finally {
       setThreatsLoading(false)
     }
   }, [uuid])
+
+  const regeneratePerishThreats = useCallback(async () => {
+    if (!uuid || threatsLoading) return
+    setThreatsLoading(true)
+    try {
+      const res = await fetch(`${API}/api/perishthreats/${uuid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructions: ptInstructions.trim() || null, count: 2 }),
+      })
+      const data = await res.json()
+      setPerishThreats(Array.isArray(data) ? data : [])
+      setCollapsedThreats(new Set())
+    } catch {
+      console.error('Failed to regenerate perishthreats')
+    } finally {
+      setThreatsLoading(false)
+    }
+  }, [uuid, ptInstructions, threatsLoading])
 
   useEffect(() => {
     if (activePage === 'perishthreats') fetchPerishThreats()
@@ -310,12 +402,17 @@ function Home() {
 
   async function handleConsume(itemId: string) {
     if (!uuid) return
-    try {
-      await fetch(`${API}/api/items/${uuid}/${itemId}?consumed=true`, { method: 'DELETE' })
-      fetchPantryItems()
-    } catch {
-      console.error('Failed to consume item')
-    }
+    setConsumingItems(prev => new Set(prev).add(itemId))
+    setTimeout(async () => {
+      try {
+        await fetch(`${API}/api/items/${uuid}/${itemId}?consumed=true`, { method: 'DELETE' })
+        fetchPantryItems()
+      } catch {
+        console.error('Failed to consume item')
+      } finally {
+        setConsumingItems(prev => { const n = new Set(prev); n.delete(itemId); return n })
+      }
+    }, 420)
   }
 
   const displayName = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User'
@@ -363,7 +460,7 @@ function Home() {
       setTimeout(() => setCarryFlying(false), 500)
     }
     try {
-      const res = await fetch(`${API}/api/llm/${encodeURIComponent(msg)}`, { method: 'POST' })
+      const res = await fetch(`${API}/api/lm/${uuid}/${encodeURIComponent(msg)}`, { method: 'POST' })
       const data = await res.json()
       setChatMessages(m => [...m, { role: 'assistant', content: data.response ?? JSON.stringify(data) }])
     } catch {
@@ -449,7 +546,7 @@ function Home() {
                 onClick={() => { setBarcodeStatus('idle'); setBarcodeModalOpen(true) }}
               >
                 <Barcode className="!w-6 !h-6" />
-                <span className="sr-only">Scan barcode</span>
+                <span>Scan Barcode</span>
               </Button>
             </div>
             <div className="home-search-input" ref={searchRef}>
@@ -490,6 +587,7 @@ function Home() {
               <Button
                 className="w-full h-full bg-[#4caf50] hover:bg-[#43a047] hover:border-[#e65100] border-2 border-transparent text-white"
               >
+                <Receipt className="!w-5 !h-5" />
                 Scan Receipt
               </Button>
             </div>
@@ -499,34 +597,67 @@ function Home() {
             {!pantryLoading && pantryItems.length === 0 && (
               <p className="home-page-placeholder">No items in your pantry yet. Scan a barcode to add one!</p>
             )}
-            {!pantryLoading && pantryItems.length > 0 && (
+            {!pantryLoading && pantryItems.length > 0 && (() => {
+              // Build a stable sorted copy without mutating state
+              const sorted = [...pantryItems].sort((a, b) => {
+                if (!sortCol) return 0
+                let av = 0, bv = 0
+                let as_ = '', bs_ = ''
+                if (sortCol === 'name') {
+                  as_ = (a.name ?? '').toLowerCase()
+                  bs_ = (b.name ?? '').toLowerCase()
+                } else if (sortCol === 'expiry') {
+                  const ad = getExpiryStatus(a.expiry_date).days
+                  const bd = getExpiryStatus(b.expiry_date).days
+                  av = ad ?? Infinity
+                  bv = bd ?? Infinity
+                } else if (sortCol === 'tags') {
+                  const firstTag = (item: Record<string, unknown>) => {
+                    if (item.category && item.category !== 'Unknown') return String(item.category).toLowerCase()
+                    return ''
+                  }
+                  as_ = firstTag(a)
+                  bs_ = firstTag(b)
+                }
+                const cmp = sortCol === 'expiry'
+                  ? av - bv
+                  : as_ < bs_ ? -1 : as_ > bs_ ? 1 : 0
+                return sortDir === 'asc' ? cmp : -cmp
+              })
+              return (
               <div className="pantry-table-wrap">
                 <table className="pantry-table">
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Expiration Status</th>
-                      <th>Tags</th>
+                      <th className="sortable-th" onClick={() => handleSort('name')}>Name {sortIcon('name')}</th>
+                      <th className="sortable-th" onClick={() => handleSort('expiry')}>Expiration Status {sortIcon('expiry')}</th>
+                      <th className="sortable-th" onClick={() => handleSort('tags')}>Tags {sortIcon('tags')}</th>
                       <th>Consume</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pantryItems.map(item => {
+                    {sorted.map(item => {
                       const expiry = getExpiryStatus(item.expiry_date)
                       // Build tags
-                      const tags: { label: string; cls: string }[] = []
+                      const tags: { label: string; cls: string; icon?: React.ReactNode }[] = []
                       if (item.category && item.category !== 'Unknown')
                         tags.push({ label: item.category, cls: 'tag-category' })
                       if (item.nutriscore_grade && item.nutriscore_grade !== 'Unknown')
                         tags.push({ label: `Nutri-${item.nutriscore_grade}`, cls: `tag-nutri tag-nutri-${item.nutriscore_grade.toLowerCase()}` })
                       if (item.can_donate === true)
-                        tags.push({ label: 'Donatable', cls: 'tag-donate' })
+                        tags.push({ label: 'Donatable', cls: 'tag-donate', icon: <HeartHandshake size={12} style={{ marginRight: '0.25em', verticalAlign: 'middle' }} /> })
                       if (item.vegan_match != null && item.vegan_match >= 75)
                         tags.push({ label: 'Vegan', cls: 'tag-vegan' })
                       else if (item.vegetarian_match != null && item.vegetarian_match >= 75)
                         tags.push({ label: 'Vegetarian', cls: 'tag-vegan' })
                       return (
-                        <tr key={item.item_id}>
+                        <tr
+                          key={item.item_id}
+                          className={consumingItems.has(item.item_id) ? 'row-consuming' : ''}
+                          onMouseEnter={e => { setHoveredItem(item); setHoverPos({ x: e.clientX, y: e.clientY }) }}
+                          onMouseMove={e => setHoverPos({ x: e.clientX, y: e.clientY })}
+                          onMouseLeave={() => setHoveredItem(null)}
+                        >
                           <td className="pt-name-cell">
                             {item.image_url && (
                               <img src={item.image_url} alt={item.name} className="pt-thumb" />
@@ -543,14 +674,15 @@ function Home() {
                           </td>
                           <td className="pt-tags-cell">
                             {tags.map((t, i) => (
-                              <span key={i} className={`pt-tag ${t.cls}`}>{t.label}</span>
+                              <span key={i} className={`pt-tag ${t.cls}`}>{t.icon}{t.label}</span>
                             ))}
                             {tags.length === 0 && <span className="pt-tag-empty">—</span>}
                           </td>
                           <td>
                             <button
-                              className="pt-consume-btn"
+                              className={`pt-consume-btn${consumingItems.has(item.item_id) ? ' pt-consume-btn--active' : ''}`}
                               title="Mark as consumed"
+                              disabled={consumingItems.has(item.item_id)}
                               onClick={() => handleConsume(item.item_id)}
                             >
                               <CheckCheck size={15} />
@@ -563,7 +695,8 @@ function Home() {
                   </tbody>
                 </table>
               </div>
-            )}
+              )
+            })()}
           </main>
 
           {/* Barcode submission status */}
@@ -628,10 +761,28 @@ function Home() {
       {/* Page: PerishThreats */}
       {activePage === 'perishthreats' && (
         <main className="home-main pt-page">
+          {/* Regenerate toolbar */}
+          <div className="pt-regen-bar">
+            <input
+              className="pt-regen-input"
+              placeholder="Custom instructions (e.g. vegetarian, spicy, Italian…)"
+              value={ptInstructions}
+              onChange={e => setPtInstructions(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && regeneratePerishThreats()}
+              disabled={threatsLoading}
+            />
+            <button
+              className="pt-regen-btn"
+              onClick={regeneratePerishThreats}
+              disabled={threatsLoading}
+            >
+              {threatsLoading ? 'Generating…' : '⟳ Regenerate'}
+            </button>
+          </div>
           {threatsLoading && (
             <div className="pt-loading">
               <img src="perishless-icon.png" alt="Loading" className="pt-loading-logo" />
-              <p className="pt-loading-text">Finding meal suggestions…</p>
+              <p className="pt-loading-text">Seeking Out PerishThreats…</p>
             </div>
           )}
           {!threatsLoading && perishThreats.length === 0 && (
@@ -641,16 +792,17 @@ function Home() {
           )}
           {!threatsLoading && perishThreats.map((threat: any, i: number) => {
             const embedUrl = threat.youtube_url ? getYouTubeEmbedUrl(threat.youtube_url) : null
+            const collapsed = collapsedThreats.has(i)
             return (
-              <div key={i} className="pt-threat-card">
-                <div className="pt-threat-header">
+              <div key={i} className={`pt-threat-card${collapsed ? ' pt-threat-card--collapsed' : ''}`}>
+                <button className="pt-threat-header" onClick={() => toggleThreat(i)}>
                   <span className="pt-threat-meal-type">{threat.meal_type ?? 'Meal Suggestion'}</span>
-                  {threat.description && (
+                  {threat.description && !collapsed && (
                     <span className="pt-threat-desc">{threat.description}</span>
                   )}
-                </div>
-                <div className="pt-threat-body">
-                  {/* Left: image */}
+                  <span className="pt-threat-chevron">{collapsed ? '▸' : '▾'}</span>
+                </button>
+                {!collapsed && <div className="pt-threat-body">
                   <div className="pt-threat-img-col">
                     {threat.image_url
                       ? <img src={threat.image_url} alt={threat.meal_type} className="pt-threat-img" />
@@ -703,7 +855,7 @@ function Home() {
                       })}
                     </ul>
                   </div>
-                </div>
+                </div>}
               </div>
             )
           })}
@@ -773,6 +925,89 @@ function Home() {
           </div>
         </main>
       )}
+
+      {/* Pantry item hover tooltip */}
+      {hoveredItem && (() => {
+        const item = hoveredItem as Record<string, string | number | boolean | null | undefined>
+        const expiry = getExpiryStatus(item.expiry_date)
+        const vw = window.innerWidth
+        const vh = window.innerHeight
+        const tipW = 560, tipH = 320
+        const left = hoverPos.x + 16 + tipW > vw ? hoverPos.x - tipW - 8 : hoverPos.x + 16
+        const top  = hoverPos.y + 16 + tipH > vh ? hoverPos.y - tipH - 8 : hoverPos.y + 16
+        return (
+          <div className="item-tooltip" style={{ left, top }} onMouseEnter={() => setHoveredItem(null)}>
+            {/* Header row: image + name */}
+            <div className="item-tooltip-header">
+              {item.image_url && (
+                <img src={String(item.image_url)} alt={String(item.name)} className="item-tooltip-img" />
+              )}
+              <p className="item-tooltip-name">{String(item.name ?? '')}</p>
+            </div>
+            {/* Two-column stats */}
+            <div className="item-tooltip-body">
+              <div className="item-tooltip-grid">
+                {item.category && item.category !== 'Unknown' && (
+                  <><span className="item-tooltip-label">Category</span><span>{String(item.category)}</span></>
+                )}
+                <span className="item-tooltip-label">Expiry</span>
+                <span className={`item-tooltip-expiry ${expiry.cls}`}>{expiry.label}{expiry.days !== null && expiry.days > 0 ? ` (~${expiry.days}d)` : ''}</span>
+                {item.nutriscore_grade && item.nutriscore_grade !== 'Unknown' && (
+                  <><span className="item-tooltip-label">Nutri-Score</span><span className={`item-tooltip-nutri tag-nutri-${String(item.nutriscore_grade).toLowerCase()}`}>{String(item.nutriscore_grade).toUpperCase()}</span></>
+                )}
+                {item.nova_processing_level != null && (
+                  <><span className="item-tooltip-label">NOVA Level</span><span>{String(item.nova_processing_level)} / 4</span></>
+                )}
+                {item.ecoscore != null && (
+                  <><span className="item-tooltip-label">Eco-Score</span><span>{String(item.ecoscore)} / 100</span></>
+                )}
+                {item.additives_count != null && (
+                  <><span className="item-tooltip-label">Additives</span><span>{String(item.additives_count)}</span></>
+                )}
+                {item.can_donate === true && (
+                  <><span className="item-tooltip-label">Donatable</span><span style={{ color: '#90caf9' }}>✓</span></>
+                )}
+              </div>
+              <div className="item-tooltip-grid">
+                {item.vegan_match != null && (
+                  <><span className="item-tooltip-label">Vegan</span><span>{String(item.vegan_match)}%</span></>
+                )}
+                {item.vegetarian_match != null && (
+                  <><span className="item-tooltip-label">Vegetarian</span><span>{String(item.vegetarian_match)}%</span></>
+                )}
+                {item.low_fat_match != null && (
+                  <><span className="item-tooltip-label">Low Fat</span><span>{String(item.low_fat_match)}%</span></>
+                )}
+                {item.low_sugar_match != null && (
+                  <><span className="item-tooltip-label">Low Sugar</span><span>{String(item.low_sugar_match)}%</span></>
+                )}
+                {item.low_salt_match != null && (
+                  <><span className="item-tooltip-label">Low Salt</span><span>{String(item.low_salt_match)}%</span></>
+                )}
+                {item.contains_meat != null && (
+                  <><span className="item-tooltip-label">Contains Meat</span><span>{item.contains_meat ? 'Yes' : 'No'}</span></>
+                )}
+                {item.contains_dairy != null && (
+                  <><span className="item-tooltip-label">Contains Dairy</span><span>{item.contains_dairy ? 'Yes' : 'No'}</span></>
+                )}
+              </div>
+            </div>
+            {/* Full-width text sections */}
+            {item.allergens && item.allergens !== 'Unknown' && (
+              <div className="item-tooltip-section">
+                <span className="item-tooltip-label">Allergens</span>
+                <p className="item-tooltip-text">{String(item.allergens)}</p>
+              </div>
+            )}
+            {item.ingredients_text && item.ingredients_text !== 'Unknown' && (
+              <div className="item-tooltip-section">
+                <span className="item-tooltip-label">Ingredients</span>
+                <p className="item-tooltip-text item-tooltip-text--clamp">{String(item.ingredients_text)}</p>
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
