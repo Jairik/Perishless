@@ -49,13 +49,13 @@ app.add_middleware(
 )
 
 # Health check
-@app.get("/api/health")
+@app.get("/health")
 async def health():
     return {"status": "ok"}
 
 
 # Get all food items for the given user uuid, optionally filtered by category or days until expiry
-@app.get("/api/items/{uuid}")
+@app.get("/items/{uuid}")
 async def get_items(uuid: str, category: str | None = None, days_until_expiry: int | None = None):
     items = _get_pantry(uuid)
     if category:
@@ -146,7 +146,7 @@ async def _enrich_all_pantry_bg(uuid: str) -> None:
 
 
 # Add a new food item to the database given a barcode image, scoped to the user uuid
-@app.post("/api/items/{uuid}/barcode")
+@app.post("/items/{uuid}/barcode")
 async def add_item_by_barcode(uuid: str, image: UploadFile = File(...)):
     image_bytes = await image.read()
     barcode = detect_barcode(image_bytes)
@@ -179,7 +179,7 @@ class AddItemRequest(BaseModel):
     barcode: str | None = None
 
 # Add a custom food item to the database given its name, category, and expiry date, scoped to the user uuid
-@app.post("/api/items/{uuid}")
+@app.post("/items/{uuid}")
 async def add_item_by_name(uuid: str, body: AddItemRequest):
     expiry_dt: datetime | None = None
     if body.expiry_date:
@@ -219,7 +219,7 @@ async def add_item_by_name(uuid: str, body: AddItemRequest):
 
 # Delete a food item from the database given its id, scoped to the user uuid
 # Pass ?consumed=true to move it to history instead of permanently deleting it
-@app.delete("/api/items/{uuid}/{item_id}")
+@app.delete("/items/{uuid}/{item_id}")
 async def delete_item(uuid: str, item_id: str, consumed: bool = False):
     if consumed:
         await run_in_threadpool(consume_food_item, uuid, item_id)
@@ -230,7 +230,7 @@ async def delete_item(uuid: str, item_id: str, consumed: bool = False):
 
 
 # Fetch a user's consumption/trash history, newest first
-@app.get("/api/history/{uuid}")
+@app.get("/history/{uuid}")
 async def get_history(uuid: str, limit: int = 300):
     try:
         rows = await run_in_threadpool(get_history_items, uuid, max(1, min(limit, 1000)))
@@ -240,7 +240,7 @@ async def get_history(uuid: str, limit: int = 300):
 
 
 # Autocomplete endpoint — fast local trigram search against the relational DB
-@app.get("/api/autocomplete")
+@app.get("/autocomplete")
 async def autocomplete(q: str = "", limit: int = 10):
     if not q.strip():
         return {"status": "success", "results": []}
@@ -267,7 +267,7 @@ async def autocomplete(q: str = "", limit: int = 10):
 
 
 # Fast image lookup by barcode — checks in-process/Firestore/OOF caches in order
-@app.get("/api/image/{barcode}")
+@app.get("/image/{barcode}")
 async def get_image(barcode: str):
     try:
         info = await asyncio.wait_for(
@@ -284,7 +284,7 @@ async def get_image(barcode: str):
 
 # Barcode lookup using an item's name (not user-specific)
 # Also seeds the autocomplete table with results for future offline suggestions
-@app.get("/api/searchItem/{name}")
+@app.get("/searchItem/{name}")
 async def lookup_item(name: str):
     normalized_name = name.strip()
     if not normalized_name:
@@ -302,7 +302,7 @@ async def lookup_item(name: str):
 
 
 # Generate a recipe recommendation based on items expiring within the next week, scoped to user uuid
-@app.get("/api/recipeRecommendation/{uuid}")
+@app.get("/recipeRecommendation/{uuid}")
 async def recipe_recommendation(uuid: str):
     items = _get_pantry(uuid)
     if not items:
@@ -312,7 +312,7 @@ async def recipe_recommendation(uuid: str):
 
 
 # Generate expiry-prioritised meal suggestions for the PerishThreats page, scoped to user uuid
-@app.get("/api/perishthreats/{uuid}")
+@app.get("/perishthreats/{uuid}")
 async def perishthreats(uuid: str, count: int = 2):
     items = _get_pantry(uuid)
     if not items:
@@ -322,7 +322,7 @@ async def perishthreats(uuid: str, count: int = 2):
 
 
 # Analyze pantry items for potential negative health impacts in batches of 10 (fast model)
-@app.get("/api/healthImpacts/{uuid}")
+@app.get("/healthImpacts/{uuid}")
 async def health_impacts(uuid: str, offset: int = 0, limit: int = 10):
     items = _get_pantry(uuid)
     total = len(items)
@@ -404,7 +404,7 @@ class TogglePostReactionRequest(BaseModel):
     reaction: str
 
 # Regenerate PerishThreats with optional custom instructions
-@app.post("/api/perishthreats/{uuid}")
+@app.post("/perishthreats/{uuid}")
 async def regenerate_perishthreats(uuid: str, body: RegenerateThreatsRequest):
     items = _get_pantry(uuid)
     if not items:
@@ -416,7 +416,7 @@ async def regenerate_perishthreats(uuid: str, body: RegenerateThreatsRequest):
 
 
 # Generate a daily motivational quote from a user's self-rated mood score (0-10)
-@app.post("/api/moodQuote/{uuid}")
+@app.post("/moodQuote/{uuid}")
 async def mood_quote(uuid: str, body: MoodQuoteRequest):
     score = max(0.0, min(10.0, body.score))
     try:
@@ -431,7 +431,7 @@ async def mood_quote(uuid: str, body: MoodQuoteRequest):
 
 
 # Favorite a recipe for a user
-@app.post("/api/favorites/{uuid}")
+@app.post("/favorites/{uuid}")
 async def favorite_recipe(uuid: str, body: FavoriteRecipeRequest):
     try:
         item = await run_in_threadpool(add_favorited_recipe, uuid, body.recipe, body.signature)
@@ -441,7 +441,7 @@ async def favorite_recipe(uuid: str, body: FavoriteRecipeRequest):
 
 
 # Remove a favorited recipe for a user
-@app.delete("/api/favorites/{uuid}")
+@app.delete("/favorites/{uuid}")
 async def unfavorite_recipe(uuid: str, body: FavoriteRecipeRequest):
     try:
         removed = await run_in_threadpool(remove_favorited_recipe, uuid, body.recipe, body.signature)
@@ -451,7 +451,7 @@ async def unfavorite_recipe(uuid: str, body: FavoriteRecipeRequest):
 
 
 # Fetch all favorited recipes for a user, newest first
-@app.get("/api/favorites/{uuid}")
+@app.get("/favorites/{uuid}")
 async def get_favorites(uuid: str, limit: int = 300):
     try:
         rows = await run_in_threadpool(get_favorited_recipes, uuid, max(1, min(limit, 1000)))
@@ -460,7 +460,7 @@ async def get_favorites(uuid: str, limit: int = 300):
         return {"status": "error", "message": "Failed to fetch favorited recipes.", "results": []}
 
 
-@app.get("/api/posts")
+@app.get("/posts")
 async def list_posts(tag: str = "all", limit: int = 200):
     try:
         return await run_in_threadpool(list_posts_payload, tag, limit)
@@ -468,7 +468,7 @@ async def list_posts(tag: str = "all", limit: int = 200):
         return {"status": "error", "message": "Failed to fetch posts.", "results": []}
 
 
-@app.post("/api/posts")
+@app.post("/posts")
 async def create_global_post(body: CreatePostRequest):
     try:
         return await run_in_threadpool(
@@ -483,7 +483,7 @@ async def create_global_post(body: CreatePostRequest):
         return {"status": "error", "message": "Failed to create post."}
 
 
-@app.post("/api/posts/{post_id}/kind/")
+@app.post("/posts/{post_id}/kind/")
 async def toggle_kind(post_id: str, body: TogglePostKindRequest):
     try:
         return await run_in_threadpool(toggle_post_kind_payload, post_id, body.uuid)
@@ -491,10 +491,10 @@ async def toggle_kind(post_id: str, body: TogglePostKindRequest):
         return {"status": "error", "message": "Failed to update interaction."}
 
 
-@app.post("/api/posts/{post_id}/react")
-@app.post("/api/posts/{post_id}/react/")
-@app.post("/api/posts/{post_id}/reaction")
-@app.post("/api/posts/{post_id}/reaction/")
+@app.post("/posts/{post_id}/react")
+@app.post("/posts/{post_id}/react/")
+@app.post("/posts/{post_id}/reaction")
+@app.post("/posts/{post_id}/reaction/")
 async def toggle_reaction(post_id: str, body: TogglePostReactionRequest):
     try:
         return await run_in_threadpool(toggle_post_reaction_payload, post_id, body.uuid, body.reaction)
@@ -503,7 +503,7 @@ async def toggle_reaction(post_id: str, body: TogglePostReactionRequest):
 
 
 # Convert text to speech audio using ElevenLabs
-@app.post("/api/tts")
+@app.post("/tts")
 async def tts(body: TTSRequest):
     cleaned = body.text.strip()
     if not cleaned:
@@ -521,7 +521,7 @@ async def tts(body: TTSRequest):
 
 
 # Convert uploaded speech audio to text using ElevenLabs
-@app.post("/api/stt")
+@app.post("/stt")
 async def stt(
     audio: UploadFile = File(...),
     model_id: str = Form("scribe_v1"),
@@ -550,7 +550,7 @@ async def stt(
 
 # Generate a single expiry-prioritised recipe as structured JSON, scoped to user uuid
 # Returns: { status, meal, response, "youtube-search", ingredients: [{name, inInventory}] }
-@app.get("/api/expiryRecipe/{uuid}")
+@app.get("/expiryRecipe/{uuid}")
 async def expiry_recipe(uuid: str):
     items = _get_pantry(uuid)
     if not items:
@@ -560,7 +560,7 @@ async def expiry_recipe(uuid: str):
 
 
 # Scan a receipt image, extract food items via OCR + Gemini, and add them all to the pantry
-@app.post("/api/scanReceipt/{uuid}")
+@app.post("/scanReceipt/{uuid}")
 async def scan_receipt(uuid: str, image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
@@ -618,7 +618,7 @@ async def scan_receipt(uuid: str, image: UploadFile = File(...)):
 
 
 # Gemini chat request (user-specific for personalized reccomendations based on pantry)
-@app.post("/api/lm/{uuid}/{message}")
+@app.post("/lm/{uuid}/{message}")
 async def gemini_chat(uuid: str, message: str, tier: str = "fast"):
     pantry = _get_pantry(uuid)
     response = await run_in_threadpool(gemini_chat_response, message, tier, pantry)
@@ -626,13 +626,13 @@ async def gemini_chat(uuid: str, message: str, tier: str = "fast"):
 
 
 # Gemini chat request (compat endpoint for existing frontend)
-@app.post("/api/llm/{message}")
+@app.post("/llm/{message}")
 async def gemini_chat_compat(message: str, tier: str = "fast"):
     response = await run_in_threadpool(gemini_chat_response, message, tier, None)
     return {"status": "success", "response": response, "model_tier": tier}
 
 # Make a new user in the database given a uuid
-@app.post("/api/createUser/{uuid}")
+@app.post("/createUser/{uuid}")
 async def create_new_user(uuid: str):
     create_user(uuid)
 
