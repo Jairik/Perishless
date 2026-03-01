@@ -5,7 +5,7 @@
     
     # Copy package files first for caching
     COPY package.json package-lock.json* ./
-    RUN npm install
+    RUN npm ci
     
     # Copy rest of source (INCLUDING .env.production)
     COPY . .
@@ -21,6 +21,7 @@
     RUN rm -rf /usr/share/nginx/html/*
     
     # Copy built app from builder
+    COPY nginx.conf /etc/nginx/conf.d/default.conf
     COPY --from=builder /app/dist /usr/share/nginx/html
     
     # Expose port 80 (container internal)

@@ -3,7 +3,7 @@ services:
   # Backend service - run the FastAPI backend
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: backend/Dockerfile
     container_name: perishless-backend
     restart: always
