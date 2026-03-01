@@ -352,11 +352,23 @@ def analyze_health_impacts(items: list[dict[str, Any]], tier: str = "fast") -> d
 
 	Returns standardized JSON-friendly buckets:
 	{
-	  "mental": [{"item_id": "...", "name": "...", "reason": "..."}],
-	  "physical": [{"item_id": "...", "name": "...", "reason": "..."}]
+	  "mental": [{"item_id": "...", "name": "...", "reason": "...", "risk_level": "low|medium|high"}],
+	  "physical": [{"item_id": "...", "name": "...", "reason": "...", "risk_level": "low|medium|high"}]
 	}
 	"""
 	client = _get_client()
+
+	def normalize_risk_level(value: Any) -> str:
+		text = str(value or "").strip().lower()
+		if text in {"low", "medium", "high"}:
+			return text
+		if text in {"med", "moderate", "mid"}:
+			return "medium"
+		if text in {"severe", "elevated", "very high"}:
+			return "high"
+		if text in {"mild", "slight", "minor"}:
+			return "low"
+		return "medium"
 
 	payload = []
 	for item in items:
@@ -383,6 +395,7 @@ def analyze_health_impacts(items: list[dict[str, Any]], tier: str = "fast") -> d
 		"For mental-health risk, look for plausible mood/cognition/sleep impact patterns from highly processed foods, high sugar swings, caffeine-like patterns, or additives when supported by ingredient clues. "
 		"For physical-health risk, look for plausible cardiometabolic, inflammatory, GI, allergy, or long-term diet quality concerns. "
 		"Only flag when there is a meaningful possibility; otherwise keep impact false. "
+		"For each impact marked true, assign a risk_level of low, medium, or high based on confidence and likely magnitude. "
 		"Reasons must be exactly one concise sentence and reference the likely ingredient/profile driver. "
 		"Each reason MUST start with a short 1-3 word Driver label followed by a colon, then the sentence. "
 		"Use one of these Driver labels whenever applicable: Empty Calories, High Sugar, High Sodium, Saturated Fat, Ultra-Processed, Additives, Caffeine, Allergen Risk, Sleep Impact, Mood Impact, Digestive Stress, Inflammation Risk. "
@@ -394,8 +407,8 @@ def analyze_health_impacts(items: list[dict[str, Any]], tier: str = "fast") -> d
 		"    {\n"
 		"      \"item_id\": \"<item id from input>\",\n"
 		"      \"name\": \"<item name>\",\n"
-		"      \"mental\": {\"impact\": true|false, \"reason\": \"<single sentence reason or empty string>\"},\n"
-		"      \"physical\": {\"impact\": true|false, \"reason\": \"<single sentence reason or empty string>\"}\n"
+		"      \"mental\": {\"impact\": true|false, \"reason\": \"<single sentence reason or empty string>\", \"risk_level\": \"low|medium|high\"},\n"
+		"      \"physical\": {\"impact\": true|false, \"reason\": \"<single sentence reason or empty string>\", \"risk_level\": \"low|medium|high\"}\n"
 		"    }\n"
 		"  ]\n"
 		"}\n\n"
@@ -434,18 +447,20 @@ def analyze_health_impacts(items: list[dict[str, Any]], tier: str = "fast") -> d
 		mental_obj = entry.get("mental")
 		if isinstance(mental_obj, dict) and bool(mental_obj.get("impact")):
 			reason = str(mental_obj.get("reason", "")).strip()
+			risk_level = normalize_risk_level(mental_obj.get("risk_level"))
 			key = item_id or name.lower()
 			if reason and key not in seen_mental:
 				seen_mental.add(key)
-				mental.append({"item_id": item_id, "name": name, "reason": reason})
+				mental.append({"item_id": item_id, "name": name, "reason": reason, "risk_level": risk_level})
 
 		physical_obj = entry.get("physical")
 		if isinstance(physical_obj, dict) and bool(physical_obj.get("impact")):
 			reason = str(physical_obj.get("reason", "")).strip()
+			risk_level = normalize_risk_level(physical_obj.get("risk_level"))
 			key = item_id or name.lower()
 			if reason and key not in seen_physical:
 				seen_physical.add(key)
-				physical.append({"item_id": item_id, "name": name, "reason": reason})
+				physical.append({"item_id": item_id, "name": name, "reason": reason, "risk_level": risk_level})
 
 	return {"mental": mental, "physical": physical}
 
