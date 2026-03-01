@@ -2,16 +2,14 @@ import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
 
-const env = import.meta.env;
-
 const firebaseConfig = {
-    apiKey: env.VITE_FIREBASE_API_KEY,
-    authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: env.VITE_FIREBASE_APP_ID,
-    measurementId: env.VITE_FIREBASE_MEASUREMENT_ID,
+    apiKey: "AIzaSyA08i-CNBFJlbmnkgM_KfiVpRQFhK5CWEI",
+    authDomain: "perishless-3c73c.firebaseapp.com",
+    projectId: "perishless-3c73c",
+    storageBucket: "perishless-3c73c.firebasestorage.com",
+    messagingSenderId: "295174731377",
+    appId: "1:295174731377:web:e165dc14be2edf37b50dd0",
+    measurementId: "G-9Z3KZ1Z5Q0",
 }
 
 if (!firebaseConfig.projectId) {
