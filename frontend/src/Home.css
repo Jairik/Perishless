@@ -1135,6 +1135,22 @@
   color: #efb5b5;
 }
 
+.defeat-success-toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 9200;
+  background: rgba(76, 175, 80, 0.2);
+  border: 1px solid rgba(76, 175, 80, 0.55);
+  color: #d9f0d9;
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+}
+
 /* ── Placeholder ───────────────────────────────────────────────────────────── */
 .home-page-placeholder {
   color: #a8c5a8;

@@ -365,6 +365,7 @@ function Home() {
   const [searchListening, setSearchListening] = useState(false)
   const [chatListening, setChatListening] = useState(false)
   const [chatSpeakingIdx, setChatSpeakingIdx] = useState<number | null>(null)
+  const [defeatSuccessMessage, setDefeatSuccessMessage] = useState('')
   const searchRef = useRef<HTMLDivElement>(null)
   const searchRecorderRef = useRef<MediaRecorder | null>(null)
   const chatRecorderRef = useRef<MediaRecorder | null>(null)
@@ -1080,12 +1081,13 @@ function Home() {
     if (!uuid) return
     setDevourMeal(threat.meal_type ?? 'Recipe')
     setDevourOverlay(true)
-    // Match ingredients flagged as in-inventory against current pantry items by name
+    // For favorited recipes, always use all listed ingredients (stored in_inventory flags can go stale).
+    const isFavoritedRecipe = Object.prototype.hasOwnProperty.call(threat as Record<string, unknown>, 'favorite_id')
     const inInventoryNames = (threat.ingredients ?? [])
-      .filter(ing => ing.in_inventory !== false)
-      .map(ing => ing.name.toLowerCase())
+      .filter(ing => isFavoritedRecipe || ing.in_inventory !== false)
+      .map(ing => ing.name.trim().toLowerCase())
     const toConsume = pantryItems.filter(item =>
-      inInventoryNames.includes((item.name ?? '').toLowerCase())
+      inInventoryNames.includes((item.name ?? '').trim().toLowerCase())
     )
     const consumedIds = new Set(toConsume.map(item => item.item_id))
     const prevPantry = pantryItems
@@ -1114,6 +1116,13 @@ function Home() {
         const toRestore = failedItems.filter(item => !existing.has(item.item_id))
         return [...prev, ...toRestore]
       })
+    }
+
+    const movedCount = toConsume.length - failedIds.size
+    if (movedCount > 0) {
+      const msg = `${movedCount} ingredient${movedCount === 1 ? '' : 's'} moved to history.`
+      setDefeatSuccessMessage(msg)
+      window.setTimeout(() => setDefeatSuccessMessage(''), 2600)
     }
   }
 
@@ -2387,6 +2396,12 @@ function Home() {
                               )
                             })}
                           </ul>
+                          <button
+                            className="pt-defeat-btn"
+                            onClick={e => { e.stopPropagation(); handleDevourRecipe(recipe) }}
+                          >
+                            ⚔ Defeat!
+                          </button>
                         </div>
                       </div>}
                     </div>
@@ -2511,6 +2526,12 @@ function Home() {
           </div>
         )
       })()}
+
+      {defeatSuccessMessage && (
+        <div className="defeat-success-toast" role="status" aria-live="polite">
+          {defeatSuccessMessage}
+        </div>
+      )}
     </div>
   )
 }
