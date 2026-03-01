@@ -199,6 +199,7 @@
 }
 
 .manual-add-modal {
+  position: relative;
   background: #1a2e1a;
   border: 1.5px solid rgba(76, 175, 80, 0.45);
   border-radius: 0.9rem;
@@ -208,6 +209,28 @@
   flex-direction: column;
   gap: 1.15rem;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.manual-add-close {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.08);
+  color: #a8c5a8;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.manual-add-close:hover {
+  background: rgba(239, 83, 80, 0.2);
+  color: #ef9a9a;
 }
 
 .manual-add-title {
@@ -305,6 +328,389 @@
 .manual-add-cancel:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ── History Modal ─────────────────────────────────────────────────────────── */
+.history-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8200;
+  background: rgba(0, 0, 0, 0.68);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.history-modal {
+  position: relative;
+  width: min(980px, 94vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  background: #1a2e1a;
+  border: 1.5px solid rgba(76, 175, 80, 0.35);
+  border-radius: 0.85rem;
+  padding: 1.2rem 1.2rem 1rem;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.55);
+}
+
+.history-close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: #a8c5a8;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.history-close:hover {
+  background: rgba(239, 83, 80, 0.2);
+  color: #ef9a9a;
+}
+
+.history-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #c8e6c9;
+}
+
+.history-subtitle {
+  margin: 0;
+  color: #8aac8a;
+  font-size: 0.82rem;
+}
+
+.history-state {
+  margin: 0.35rem 0;
+  color: #a8c5a8;
+  font-size: 0.9rem;
+}
+
+.history-state--error {
+  color: #ef9a9a;
+}
+
+.history-table-wrap {
+  border: 1px solid rgba(76, 175, 80, 0.25);
+  border-radius: 0.65rem;
+  overflow: auto;
+  max-height: calc(82vh - 110px);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  color: #f0f7f0;
+}
+
+.history-table thead tr {
+  background: rgba(76, 175, 80, 0.12);
+  border-bottom: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.history-table th {
+  padding: 0.72rem 0.9rem;
+  text-align: left;
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #a8c5a8;
+  white-space: nowrap;
+}
+
+.history-table td {
+  padding: 0.62rem 0.9rem;
+  border-bottom: 1px solid rgba(76, 175, 80, 0.1);
+  vertical-align: middle;
+}
+
+.history-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 220px;
+}
+
+.history-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.history-thumb--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5a7a5a;
+}
+
+.history-action-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.16rem 0.54rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.history-action-badge--consumed {
+  background: rgba(76, 175, 80, 0.18);
+  color: #a5d6a7;
+  border: 1px solid rgba(76, 175, 80, 0.4);
+}
+
+.history-action-badge--trashed {
+  background: rgba(239, 83, 80, 0.15);
+  color: #ef9a9a;
+  border: 1px solid rgba(239, 83, 80, 0.36);
+}
+
+/* ── Favorited Recipes Modal ──────────────────────────────────────────────── */
+.favrec-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8230;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.favrec-modal {
+  position: relative;
+  width: min(1120px, 95vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  background: #1a2e1a;
+  border: 1.5px solid rgba(76, 175, 80, 0.35);
+  border-radius: 0.9rem;
+  padding: 1.1rem;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.58);
+}
+
+.favrec-close {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.08);
+  color: #a8c5a8;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.favrec-close:hover {
+  background: rgba(239, 83, 80, 0.2);
+  color: #ef9a9a;
+}
+
+.favrec-title {
+  margin: 0;
+  font-size: 1.08rem;
+  color: #c8e6c9;
+}
+
+.favrec-subtitle {
+  margin: 0;
+  color: #8aac8a;
+  font-size: 0.82rem;
+}
+
+.favrec-state {
+  margin: 0.45rem 0;
+  color: #a8c5a8;
+  font-size: 0.9rem;
+}
+
+.favrec-state--error {
+  color: #ef9a9a;
+}
+
+.favrec-list {
+  overflow: auto;
+  max-height: calc(88vh - 120px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-right: 0.25rem;
+}
+
+/* ── Recipe favorite star ─────────────────────────────────────────────────── */
+.pt-favorite-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  margin-right: 0.25rem;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.55;
+  filter: grayscale(1);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.1s, opacity 0.12s, filter 0.12s;
+}
+
+.pt-favorite-star:hover {
+  transform: scale(1.12);
+  opacity: 0.9;
+}
+
+.pt-favorite-star--active {
+  opacity: 1;
+  filter: grayscale(0);
+}
+
+.pt-favorite-star--pending {
+  opacity: 0.65;
+}
+
+/* ── Daily Mood Modal ─────────────────────────────────────────────────────── */
+.mood-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8250;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mood-modal {
+  position: relative;
+  width: min(540px, 92vw);
+  background: #1a2e1a;
+  border: 1.5px solid rgba(76, 175, 80, 0.42);
+  border-radius: 0.9rem;
+  padding: 1.2rem 1.2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.58);
+}
+
+.mood-close {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.08);
+  color: #a8c5a8;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.mood-close:hover {
+  background: rgba(239, 83, 80, 0.2);
+  color: #ef9a9a;
+}
+
+.mood-title {
+  margin: 0;
+  font-size: 1.08rem;
+  color: #c8e6c9;
+}
+
+.mood-carry-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.mood-carry-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mood-bubble {
+  flex: 1;
+  background: rgba(76, 175, 80, 0.14);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 0.8rem;
+  padding: 0.6rem 0.8rem;
+  color: #d4e8d4;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.mood-slider-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.mood-slider-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #8aac8a;
+  font-size: 0.78rem;
+}
+
+.mood-slider-value {
+  font-size: 1.05rem;
+  color: #a5d6a7;
+  font-weight: 700;
+}
+
+.mood-slider {
+  width: 100%;
+  accent-color: #4caf50;
+}
+
+.mood-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
+}
+
+.mood-submit {
+  padding: 0.45rem 1.05rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(76, 175, 80, 0.55);
+  background: rgba(76, 175, 80, 0.2);
+  color: #c8e6c9;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.mood-submit:hover {
+  background: rgba(76, 175, 80, 0.35);
+  border-color: #81c784;
 }
 
 /* ── Tab bar ───────────────────────────────────────────────────────────────── */
@@ -1454,6 +1860,7 @@
 
 .item-tooltip-text--clamp {
   display: -webkit-box;
+  line-clamp: 4;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -1545,6 +1952,242 @@
   font-size: 0.78em;
   font-weight: 500;
   opacity: 0.75;
+}
+
+/* ── Health Impacts page ──────────────────────────────────────────────────── */
+.health-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  padding: 1.5rem 2rem 2rem;
+}
+
+.health-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.health-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #c8e6c9;
+  letter-spacing: 0.02em;
+}
+
+.health-subtitle {
+  margin: 0.2rem 0 0;
+  color: #8aac8a;
+  font-size: 0.83rem;
+}
+
+.health-progress-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #a5d6a7;
+  font-size: 0.8rem;
+  background: rgba(76, 175, 80, 0.12);
+  border: 1px solid rgba(76, 175, 80, 0.35);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+}
+
+@keyframes health-spin {
+  to { transform: rotate(360deg); }
+}
+
+.health-progress-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid rgba(129, 199, 132, 0.35);
+  border-top-color: #81c784;
+  border-radius: 50%;
+  animation: health-spin 0.75s linear infinite;
+}
+
+.health-progress-text {
+  font-weight: 600;
+}
+
+.health-error {
+  margin: 0;
+  color: #ef9a9a;
+  font-size: 0.9rem;
+}
+
+.health-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.health-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(76, 175, 80, 0.22);
+  border-radius: 0.8rem;
+  padding: 0.9rem;
+  min-height: 320px;
+}
+
+.health-col--mental {
+  border-color: rgba(156, 39, 176, 0.3);
+}
+
+.health-col--physical {
+  border-color: rgba(244, 67, 54, 0.28);
+}
+
+.health-col-title {
+  margin: 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #a5d6a7;
+}
+
+.health-col-empty {
+  margin: 0;
+  color: #7aab7a;
+  font-size: 0.86rem;
+}
+
+.health-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: visible;
+  max-height: none;
+  padding-right: 0.2rem;
+}
+
+.health-item-card {
+  border: 1px solid rgba(76, 175, 80, 0.2);
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.health-item-header {
+  width: 100%;
+  border: none;
+  background: rgba(76, 175, 80, 0.08);
+  color: #d4e8d4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.health-item-header:hover {
+  background: rgba(76, 175, 80, 0.15);
+}
+
+.health-item-card--collapsed .health-item-header {
+  border-bottom: none;
+}
+
+.health-item-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.health-item-header-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-left: 0.8rem;
+  flex-shrink: 0;
+}
+
+.health-item-flag {
+  font-size: 0.68rem;
+  color: #ffd0d0;
+  background: rgba(239, 83, 80, 0.16);
+  border: 1px solid rgba(239, 83, 80, 0.35);
+  border-radius: 999px;
+  padding: 0.2rem 0.48rem;
+  letter-spacing: 0.03em;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.health-item-chevron {
+  color: #8aac8a;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.health-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border-top: 1px solid rgba(76, 175, 80, 0.18);
+}
+
+.health-item-summary {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #efc7c7;
+  background: rgba(239, 83, 80, 0.12);
+  border: 1px solid rgba(239, 83, 80, 0.25);
+  border-radius: 0.45rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.health-item-details {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(76, 175, 80, 0.16);
+  border-radius: 0.45rem;
+  padding: 0.65rem;
+  overflow-wrap: anywhere;
+}
+
+.health-item-details .item-tooltip-body {
+  margin-top: 0;
+}
+
+.health-item-details .item-tooltip-grid {
+  font-size: 0.78rem;
+}
+
+.health-item-details .item-tooltip-text {
+  font-size: 0.76rem;
+}
+
+.health-item-details .item-tooltip-text--clamp {
+  display: block;
+  line-clamp: initial;
+  -webkit-line-clamp: initial;
+  -webkit-box-orient: initial;
+  overflow: visible;
+}
+
+.health-item-details-empty {
+  margin: 0;
+  color: #7aab7a;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 1080px) {
+  .health-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── PerishThreats page ─────────────────────────────────────────────────────── */

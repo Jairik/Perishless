@@ -23,6 +23,39 @@ function renderMarkdown(text: string): string {
   return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } })
 }
 
+type FirestoreTimestamp = { _seconds: number; _nanoseconds?: number }
+type ExpiryValue = string | number | Date | FirestoreTimestamp | null | undefined
+
+interface PantryItem {
+  item_id: string
+  name?: string
+  category?: string | null
+  image_url?: string | null
+  expiry_date?: ExpiryValue
+  nutriscore_grade?: string | null
+  can_donate?: boolean | null
+  vegan_match?: number | null
+  vegetarian_match?: number | null
+  low_fat_match?: number | null
+  low_sugar_match?: number | null
+  low_salt_match?: number | null
+  contains_meat?: boolean | null
+  contains_dairy?: boolean | null
+  allergens?: string | null
+  ingredients_text?: string | null
+  nova_processing_level?: number | null
+  ecoscore?: number | null
+  additives_count?: number | null
+  [key: string]: unknown
+}
+
+interface PerishThreatIngredient {
+  name: string
+  image_url?: string
+  expiry_date?: ExpiryValue
+  in_inventory?: boolean
+}
+
 function Home() {
   const navigate = useNavigate()
   const { user: currentUser, uuid, loading: authLoading } = useAuth()
@@ -31,16 +64,25 @@ function Home() {
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
   const [aiLoading, setAiLoading] = useState(false)
   const [carryFlying, setCarryFlying] = useState(false)
+  const [dailyMoodEnabled, setDailyMoodEnabled] = useState(() => {
+    const stored = localStorage.getItem('daily-mood-enabled')
+    return stored === null ? true : stored === '1'
+  })
+  const [moodModalOpen, setMoodModalOpen] = useState(false)
+  const [moodScore, setMoodScore] = useState(5)
+  const [moodPhase, setMoodPhase] = useState<'input' | 'loading' | 'response' | 'error'>('input')
+  const [moodQuote, setMoodQuote] = useState('')
+  const [moodError, setMoodError] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
-  const [activePage, setActivePage] = useState<'pantry' | 'perishthreats' | 'ai'>('pantry')
+  const [activePage, setActivePage] = useState<'pantry' | 'perishthreats' | 'health' | 'ai'>('pantry')
 
   // Pantry items
-  const [pantryItems, setPantryItems] = useState<any[]>([])
+  const [pantryItems, setPantryItems] = useState<PantryItem[]>([])
   const [pantryLoading, setPantryLoading] = useState(false)
   const [sortCol, setSortCol] = useState<'name' | 'expiry' | 'tags' | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [consumingItems, setConsumingItems] = useState<Set<string>>(new Set())
-  const [hoveredItem, setHoveredItem] = useState<Record<string, unknown> | null>(null)
+  const [hoveredItem, setHoveredItem] = useState<PantryItem | null>(null)
   const [devourOverlay, setDevourOverlay] = useState(false)
   const [devourMeal, setDevourMeal] = useState('')
   const [throwAwayOverlay, setThrowAwayOverlay] = useState(false)
@@ -57,6 +99,7 @@ function Home() {
   const [manualAddError, setManualAddError] = useState('')
   const [addingItems, setAddingItems] = useState<Set<string>>(new Set())
 
+  // Open manual add modal and prefill an optional item name.
   function openManualAdd(name = '') {
     setManualAddName(name)
     setManualAddExpiry('')
@@ -66,6 +109,7 @@ function Home() {
     setSearchOpen(false)
   }
 
+  // Submit a manually entered pantry item to the backend.
   async function handleManualAdd() {
     if (!uuid || !manualAddName.trim()) return
     setManualAddLoading(true)
@@ -95,6 +139,7 @@ function Home() {
     }
   }
 
+  // Add an item directly from search/autocomplete without opening the manual modal.
   async function addItemDirect(name: string, image_url?: string, barcode?: string) {
     if (!uuid || !name.trim()) return
     setAddingItems(prev => new Set(prev).add(name))
@@ -120,6 +165,7 @@ function Home() {
     }
   }
 
+  // Toggle sorting state for a pantry table column.
   function handleSort(col: 'name' | 'expiry' | 'tags') {
     if (sortCol !== col) {
       setSortCol(col)
@@ -132,6 +178,7 @@ function Home() {
     }
   }
 
+  // Render the sort icon for the currently active sort column.
   function sortIcon(col: 'name' | 'expiry' | 'tags') {
     if (sortCol !== col) return <span className="sort-icon sort-icon--inactive">⇅</span>
     return <span className="sort-icon">{sortDir === 'asc' ? '↑' : '↓'}</span>
@@ -143,13 +190,37 @@ function Home() {
     description?: string
     image_url?: string
     youtube_url?: string
-    ingredients?: Array<{ name: string; image_url?: string; expiry_date?: any; in_inventory?: boolean }>
+    ingredients?: PerishThreatIngredient[]
+  }
+  interface FavoritedRecipe extends PerishThreat {
+    favorite_id: string
+    recipe_signature?: string
+    favorited_at?: unknown
+  }
+  interface HealthImpactHit {
+    item_id?: string
+    name: string
+    reason: string
   }
   const [perishThreats, setPerishThreats] = useState<PerishThreat[]>([])
   const [threatsLoading, setThreatsLoading] = useState(false)
   const [ptInstructions, setPtInstructions] = useState('')
   const [collapsedThreats, setCollapsedThreats] = useState<Set<number>>(new Set())
+  const [healthMentalHits, setHealthMentalHits] = useState<HealthImpactHit[]>([])
+  const [healthPhysicalHits, setHealthPhysicalHits] = useState<HealthImpactHit[]>([])
+  const [healthCollapsedMental, setHealthCollapsedMental] = useState<Set<string>>(new Set())
+  const [healthCollapsedPhysical, setHealthCollapsedPhysical] = useState<Set<string>>(new Set())
+  const [healthLoading, setHealthLoading] = useState(false)
+  const [healthError, setHealthError] = useState('')
+  const [healthProgress, setHealthProgress] = useState({ processed: 0, total: 0 })
+  const [favoriteRecipesOpen, setFavoriteRecipesOpen] = useState(false)
+  const [favoriteRecipesLoading, setFavoriteRecipesLoading] = useState(false)
+  const [favoriteRecipesError, setFavoriteRecipesError] = useState('')
+  const [favoriteRecipes, setFavoriteRecipes] = useState<FavoritedRecipe[]>([])
+  const [collapsedFavoriteRecipes, setCollapsedFavoriteRecipes] = useState<Set<string>>(new Set())
+  const [favoritePending, setFavoritePending] = useState<Set<string>>(new Set())
 
+  // Expand or collapse a PerishThreat card by index.
   function toggleThreat(i: number) {
     setCollapsedThreats(prev => {
       const next = new Set(prev)
@@ -157,6 +228,132 @@ function Home() {
       return next
     })
   }
+
+  // Build a stable signature for a recipe to support favorite toggling.
+  function recipeSignature(recipe: PerishThreat): string {
+    const meal = (recipe.meal_type ?? '').trim().toLowerCase()
+    const yt = (recipe.youtube_url ?? '').trim().toLowerCase()
+    const ingredients = (recipe.ingredients ?? [])
+      .map(ing => (ing?.name ?? '').trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join(',')
+    return `${meal}|${yt}|${ingredients}`
+  }
+
+  // Check if a recipe is already in the user's favorites list.
+  function isRecipeFavorited(recipe: PerishThreat): boolean {
+    const sig = recipeSignature(recipe)
+    return favoriteRecipes.some(r => (r.recipe_signature ?? '') === sig)
+  }
+
+  // Toggle expanded state for a favorited recipe card in the modal.
+  function toggleFavoriteRecipeCollapse(id: string) {
+    setCollapsedFavoriteRecipes(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // Fetch all favorited recipes for the signed-in user.
+  const fetchFavoriteRecipes = useCallback(async () => {
+    if (!uuid) return
+    setFavoriteRecipesLoading(true)
+    setFavoriteRecipesError('')
+    try {
+      const res = await fetch(`${API}/api/favorites/${uuid}`)
+      const raw = await res.text()
+      let data: { status?: string; message?: string; results?: FavoritedRecipe[] } = {}
+      try {
+        data = raw ? JSON.parse(raw) : {}
+      } catch {
+        data = { status: 'error', message: raw || `Server error (${res.status})`, results: [] }
+      }
+
+      if (!res.ok || data.status !== 'success') {
+        setFavoriteRecipesError(data.message ?? 'Failed to load favorited recipes.')
+        setFavoriteRecipes([])
+        setCollapsedFavoriteRecipes(new Set())
+        return
+      }
+
+      const results = Array.isArray(data.results) ? data.results : []
+      setFavoriteRecipes(results)
+      setCollapsedFavoriteRecipes(new Set(results.map(r => r.favorite_id)))
+    } catch {
+      setFavoriteRecipesError('Network error — please try again.')
+      setFavoriteRecipes([])
+      setCollapsedFavoriteRecipes(new Set())
+    } finally {
+      setFavoriteRecipesLoading(false)
+    }
+  }, [uuid])
+
+  // Favorite or unfavorite a recipe and sync local UI state.
+  async function toggleFavoriteRecipe(recipe: PerishThreat) {
+    if (!uuid) return
+    const signature = recipeSignature(recipe)
+    if (!signature || favoritePending.has(signature)) return
+
+    const currentlyFavorited = isRecipeFavorited(recipe)
+    setFavoritePending(prev => new Set(prev).add(signature))
+    try {
+      if (currentlyFavorited) {
+        const res = await fetch(`${API}/api/favorites/${uuid}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ signature, recipe }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || data.status !== 'success') throw new Error(data.message ?? 'Failed to unfavorite')
+        setFavoriteRecipes(prev => prev.filter(r => (r.recipe_signature ?? '') !== signature))
+      } else {
+        const res = await fetch(`${API}/api/favorites/${uuid}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ signature, recipe }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || data.status !== 'success' || !data.item) throw new Error(data.message ?? 'Failed to favorite')
+        setFavoriteRecipes(prev => {
+          const without = prev.filter(r => (r.recipe_signature ?? '') !== signature)
+          return [data.item as FavoritedRecipe, ...without]
+        })
+        setCollapsedFavoriteRecipes(prev => {
+          const next = new Set(prev)
+          next.add((data.item as FavoritedRecipe).favorite_id)
+          return next
+        })
+      }
+    } catch (err) {
+      console.error('Failed to toggle favorite recipe', err)
+    } finally {
+      setFavoritePending(prev => { const next = new Set(prev); next.delete(signature); return next })
+    }
+  }
+
+  // Open the favorites modal and load current favorites.
+  function openFavoriteRecipesModal() {
+    setDropdownOpen(false)
+    setFavoriteRecipesOpen(true)
+    fetchFavoriteRecipes()
+  }
+
+  // Close the favorites modal.
+  function closeFavoriteRecipesModal() {
+    setFavoriteRecipesOpen(false)
+  }
+
+  useEffect(() => {
+    if (!favoriteRecipesOpen) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') closeFavoriteRecipesModal()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [favoriteRecipesOpen])
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -248,7 +445,7 @@ function Home() {
         .catch(() => {})
     })
     return () => { cancelled = true }
-  }, [searchResults.map(r => r.barcode + ':' + (r.image_url ?? '')).join('|')])
+  }, [searchResults])
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -264,6 +461,7 @@ function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages, aiLoading])
 
+  // Load pantry items for the authenticated user.
   const fetchPantryItems = useCallback(async () => {
     if (!uuid) return
     setPantryLoading(true)
@@ -290,6 +488,7 @@ function Home() {
     return () => window.clearTimeout(retryTimer)
   }, [activePage, authLoading, uuid, fetchPantryItems])
 
+  // Fetch PerishThreat recipe suggestions for current pantry contents.
   const fetchPerishThreats = useCallback(async () => {
     if (!uuid) return
     setThreatsLoading(true)
@@ -305,6 +504,7 @@ function Home() {
     }
   }, [uuid])
 
+  // Regenerate PerishThreat suggestions with optional custom instructions.
   const regeneratePerishThreats = useCallback(async () => {
     if (!uuid || threatsLoading) return
     setThreatsLoading(true)
@@ -328,12 +528,218 @@ function Home() {
     if (activePage === 'perishthreats') fetchPerishThreats()
   }, [activePage, fetchPerishThreats])
 
+  useEffect(() => {
+    if (authLoading || !uuid || !dailyMoodEnabled) return
+    const today = new Date().toISOString().slice(0, 10)
+    const lastKey = `daily-mood-last-${uuid}`
+    if (localStorage.getItem(lastKey) === today) return
+
+    localStorage.setItem(lastKey, today)
+    setMoodScore(5)
+    setMoodQuote('')
+    setMoodError('')
+    setMoodPhase('input')
+    setMoodModalOpen(true)
+  }, [authLoading, uuid, dailyMoodEnabled])
+
+  // Enable or disable the daily mood prompt feature.
+  function toggleDailyMoodEnabled() {
+    setDailyMoodEnabled(prev => {
+      const next = !prev
+      localStorage.setItem('daily-mood-enabled', next ? '1' : '0')
+      if (!next) setMoodModalOpen(false)
+      return next
+    })
+  }
+
+  // Close the daily mood modal.
+  function closeMoodModal() {
+    setMoodModalOpen(false)
+  }
+
+  useEffect(() => {
+    if (!moodModalOpen) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') closeMoodModal()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [moodModalOpen])
+
+  // Submit today's mood score and request a motivational quote.
+  async function submitMoodScore() {
+    if (!uuid || moodPhase === 'loading') return
+    setMoodPhase('loading')
+    setMoodError('')
+    setMoodQuote('')
+    try {
+      const res = await fetch(`${API}/api/moodQuote/${uuid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score: moodScore }),
+      })
+      const raw = await res.text()
+      let data: { status?: string; quote?: string; message?: string } = {}
+      try {
+        data = raw ? JSON.parse(raw) : {}
+      } catch {
+        data = { status: 'error', message: raw || `Server error (${res.status})` }
+      }
+
+      if (!res.ok || data.status !== 'success') {
+        setMoodError(data.message ?? 'Could not generate your quote.')
+        setMoodQuote(data.quote ?? '')
+        setMoodPhase('error')
+        return
+      }
+
+      setMoodQuote(data.quote ?? '')
+      setMoodPhase('response')
+    } catch {
+      setMoodError('Network error — please try again.')
+      setMoodPhase('error')
+    }
+  }
+
+  // Merge health impact hits by stable key to avoid duplicate entries.
+  const mergeHealthHits = useCallback((prev: HealthImpactHit[], incoming: HealthImpactHit[]): HealthImpactHit[] => {
+    const byKey = new Map<string, HealthImpactHit>()
+    prev.forEach(hit => {
+      const key = (hit.item_id && hit.item_id.trim()) || hit.name.toLowerCase()
+      byKey.set(key, hit)
+    })
+    incoming.forEach(hit => {
+      const key = (hit.item_id && hit.item_id.trim()) || hit.name.toLowerCase()
+      if (!key) return
+      byKey.set(key, hit)
+    })
+    return Array.from(byKey.values())
+  }, [])
+
+  useEffect(() => {
+    if (activePage !== 'health' || !uuid) return
+
+    let cancelled = false
+
+    async function loadHealthImpacts() {
+      setHealthLoading(true)
+      setHealthError('')
+      setHealthProgress({ processed: 0, total: pantryItems.length })
+      setHealthMentalHits([])
+      setHealthPhysicalHits([])
+      setHealthCollapsedMental(new Set())
+      setHealthCollapsedPhysical(new Set())
+
+      let offset = 0
+      const limit = 10
+
+      try {
+        while (!cancelled) {
+          const res = await fetch(`${API}/api/healthImpacts/${uuid}?offset=${offset}&limit=${limit}`)
+          const raw = await res.text()
+          let data: {
+            status?: string
+            message?: string
+            batch?: { offset?: number; size?: number; total?: number; next_offset?: number | null; done?: boolean }
+            mental?: HealthImpactHit[]
+            physical?: HealthImpactHit[]
+          } = {}
+          try {
+            data = raw ? JSON.parse(raw) : {}
+          } catch {
+            data = { status: 'error', message: raw || `Server error (${res.status})` }
+          }
+
+          if (!res.ok || data.status !== 'success') {
+            throw new Error(data.message ?? `Failed to load health impacts (${res.status})`)
+          }
+
+          const batch = data.batch ?? {}
+          const mental: HealthImpactHit[] = Array.isArray(data.mental) ? data.mental : []
+          const physical: HealthImpactHit[] = Array.isArray(data.physical) ? data.physical : []
+
+          if (!cancelled) {
+            setHealthMentalHits(prev => mergeHealthHits(prev, mental))
+            setHealthPhysicalHits(prev => mergeHealthHits(prev, physical))
+            setHealthProgress({
+              processed: (batch.offset ?? offset) + (batch.size ?? 0),
+              total: batch.total ?? pantryItems.length,
+            })
+          }
+
+          if (batch.done === true) break
+
+          const nextOffset = batch.next_offset
+          if (typeof nextOffset !== 'number' || nextOffset <= offset) break
+          offset = nextOffset
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setHealthError(err instanceof Error ? err.message : 'Failed to load health impacts.')
+        }
+      } finally {
+        if (!cancelled) setHealthLoading(false)
+      }
+    }
+
+    loadHealthImpacts()
+    return () => { cancelled = true }
+  }, [activePage, uuid, pantryItems.length, mergeHealthHits])
+
   // Profile dropdown
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [editingUsername, setEditingUsername] = useState(false)
   const [newUsername, setNewUsername] = useState('')
   const [usernameError, setUsernameError] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+  const [historyItems, setHistoryItems] = useState<Record<string, unknown>[]>([])
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Open the history modal and fetch consumed/trashed entries.
+  async function openHistoryModal() {
+    if (!uuid) return
+    setDropdownOpen(false)
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+    setHistoryError('')
+    try {
+      const res = await fetch(`${API}/api/history/${uuid}`)
+      const raw = await res.text()
+      let data: { status?: string; message?: string; results?: Record<string, unknown>[] } = {}
+      try {
+        data = raw ? JSON.parse(raw) : {}
+      } catch {
+        data = { status: 'error', message: raw || `Server error (${res.status})`, results: [] }
+      }
+      if (!res.ok || data.status !== 'success') {
+        setHistoryError(data.message ?? 'Failed to load history.')
+        setHistoryItems([])
+        return
+      }
+      setHistoryItems(Array.isArray(data.results) ? data.results : [])
+    } catch {
+      setHistoryError('Network error — please try again.')
+      setHistoryItems([])
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  // Close the history modal.
+  function closeHistoryModal() {
+    setHistoryOpen(false)
+  }
+
+  useEffect(() => {
+    if (!historyOpen) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') closeHistoryModal()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [historyOpen])
 
   // Barcode scanner modal
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
@@ -355,6 +761,7 @@ function Home() {
   const receiptFileRef = useRef<HTMLInputElement>(null)
   const receiptDragRef = useRef<HTMLDivElement>(null)
 
+  // Open the receipt scanner modal and reset transient state.
   function openReceiptModal() {
     setReceiptPhase('idle')
     setReceiptItems([])
@@ -362,6 +769,7 @@ function Home() {
     setReceiptModalOpen(true)
   }
 
+  // Upload and process a receipt image through the scanReceipt endpoint.
   async function handleReceiptFile(file: File) {
     if (!uuid) return
     setReceiptPhase('scanning')
@@ -399,18 +807,21 @@ function Home() {
     }
   }
 
+  // Handle receipt file input selection.
   function handleReceiptInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) handleReceiptFile(file)
     e.target.value = ''
   }
 
+  // Handle drag-and-drop receipt uploads.
   function handleReceiptDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
     const file = e.dataTransfer.files?.[0]
     if (file) handleReceiptFile(file)
   }
 
+  // Stop scanner stream, controls, and animation loop.
   const stopCamera = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current)
     scanControlsRef.current?.stop()
@@ -420,11 +831,13 @@ function Home() {
     detectedRef.current = false
   }, [])
 
+  // Close barcode modal after cleaning up camera resources.
   const closeModal = useCallback(() => {
     stopCamera()
     setBarcodeModalOpen(false)
   }, [stopCamera])
 
+  // Submit a barcode image and add the resolved product to pantry.
   const submitBarcodeImage = useCallback(async (file: File) => {
     closeModal()
     if (!uuid) {
@@ -518,6 +931,7 @@ function Home() {
     return () => { cancelled = true; stopCamera() }
   }, [barcodeModalOpen, stopCamera, submitBarcodeImage])
 
+  // Handle manual barcode image upload from file picker.
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -525,6 +939,7 @@ function Home() {
     submitBarcodeImage(file)
   }
 
+  // Capture the current camera frame and submit it as a barcode image.
   function captureFrame() {
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -550,9 +965,10 @@ function Home() {
   }, [barcodeModalOpen])
 
   // Expiry status helper
-  function getExpiryStatus(expiryRaw: any): { label: string; cls: string; days: number | null } {
+  // Convert raw expiry data into a labeled UI status badge.
+  function getExpiryStatus(expiryRaw: ExpiryValue): { label: string; cls: string; days: number | null } {
     if (!expiryRaw) return { label: 'No Date', cls: 'expiry-unknown', days: null }
-    const date = new Date(typeof expiryRaw === 'object' && '_seconds' in expiryRaw
+    const date = new Date(typeof expiryRaw === 'object' && expiryRaw !== null && '_seconds' in expiryRaw
       ? expiryRaw._seconds * 1000
       : expiryRaw)
     if (isNaN(date.getTime())) return { label: 'No Date', cls: 'expiry-unknown', days: null }
@@ -565,6 +981,7 @@ function Home() {
     return { label: 'Fresh', cls: 'expiry-fresh', days: d }
   }
 
+  // Normalize YouTube links into embeddable iframe URLs.
   function getYouTubeEmbedUrl(url: string): string | null {
     // Standard watch URL or short URL with a real video ID
     const idMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
@@ -575,6 +992,37 @@ function Home() {
     return null
   }
 
+  // Derive a compact category tag from a health-impact reason sentence.
+  function getHealthReasonTag(reason: string): string {
+    const text = reason.toLowerCase()
+    const tags: Array<{ keys: string[]; label: string }> = [
+      { keys: ['empty calories', 'empty calorie', 'alcohol'], label: 'Empty Calories' },
+      { keys: ['sugar', 'glucose', 'syrup', 'sweetener'], label: '↑ Sugar' },
+      { keys: ['salt', 'sodium'], label: '↑ Sodium' },
+      { keys: ['fat', 'saturated'], label: '↑ Saturated Fat' },
+      { keys: ['additive', 'preservative', 'emulsifier', 'colorant'], label: '↑ Additives' },
+      { keys: ['processed', 'nova'], label: 'Ultra-Processed' },
+      { keys: ['caffeine'], label: '↑ Caffeine' },
+      { keys: ['allergen', 'allergy'], label: 'Allergen Risk' },
+      { keys: ['sleep'], label: 'Sleep Disruption' },
+      { keys: ['mood'], label: 'Mood Volatility' },
+      { keys: ['inflammation', 'inflammatory'], label: 'Inflammation Risk' },
+      { keys: ['gi', 'digest', 'gut'], label: 'Digestive Stress' },
+    ]
+
+    const matched = tags.find(tag => tag.keys.some(k => text.includes(k)))
+    if (matched) return matched.label
+
+    const cleaned = reason
+      .replace(/[^a-zA-Z0-9\s]/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 3)
+      .join(' ')
+    return cleaned ? `↑ ${cleaned}` : '↑ Health Risk'
+  }
+
+  // Consume a pantry item with optimistic UI removal and rollback on failure.
   async function handleConsume(itemId: string) {
     if (!uuid) return
     const item = pantryItems.find(p => p.item_id === itemId)
@@ -596,6 +1044,7 @@ function Home() {
     }, 420)
   }
 
+  // Trash an expired pantry item with optimistic UI removal and rollback on failure.
   async function handleThrowAway(itemId: string) {
     if (!uuid) return
     const item = pantryItems.find(p => p.item_id === itemId)
@@ -617,6 +1066,7 @@ function Home() {
     }, 420)
   }
 
+  // Consume all in-inventory ingredients used by a defeated PerishThreat recipe.
   async function handleDevourRecipe(threat: PerishThreat) {
     if (!uuid) return
     setDevourMeal(threat.meal_type ?? 'Recipe')
@@ -672,11 +1122,13 @@ function Home() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Sign out the current user and return to the landing page.
   async function handleSignOut() {
     await signOut(auth)
     navigate('/')
   }
 
+  // Update the current Firebase display name from the profile dropdown.
   async function handleChangeUsername() {
     if (!newUsername.trim()) {
       setUsernameError('Username cannot be empty')
@@ -691,6 +1143,7 @@ function Home() {
     setDropdownOpen(false)
   }
 
+  // Send a chat message to Carry and append the assistant response.
   async function handleAiSuggest() {
     const msg = aiMessage.trim()
     if (!msg || aiLoading) return
@@ -711,6 +1164,102 @@ function Home() {
     } finally {
       setAiLoading(false)
     }
+  }
+
+  // Match a health-impact hit back to its pantry item for detail rendering.
+  function findPantryItemForHit(hit: HealthImpactHit) {
+    return pantryItems.find(item =>
+      (hit.item_id && item.item_id === hit.item_id) ||
+      String(item.name ?? '').toLowerCase() === hit.name.toLowerCase()
+    )
+  }
+
+  // Toggle expanded state for a mental-health hit card.
+  function toggleHealthMental(key: string) {
+    setHealthCollapsedMental(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  // Toggle expanded state for a physical-health hit card.
+  function toggleHealthPhysical(key: string) {
+    setHealthCollapsedPhysical(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  // Render the reusable pantry detail content block used by multiple UI surfaces.
+  function renderPantryDetailContent(item: PantryItem) {
+    const expiry = getExpiryStatus(item.expiry_date)
+    return (
+      <>
+        <div className="item-tooltip-body">
+          <div className="item-tooltip-grid">
+            {item.category && item.category !== 'Unknown' && (
+              <><span className="item-tooltip-label">Category</span><span>{String(item.category)}</span></>
+            )}
+            <span className="item-tooltip-label">Expiry</span>
+            <span className={`item-tooltip-expiry ${expiry.cls}`}>{expiry.label}{expiry.days !== null && expiry.days > 0 ? ` (~${expiry.days}d)` : ''}</span>
+            {item.nutriscore_grade && item.nutriscore_grade !== 'Unknown' && (
+              <><span className="item-tooltip-label">Nutri-Score</span><span className={`item-tooltip-nutri tag-nutri-${String(item.nutriscore_grade).toLowerCase()}`}>{String(item.nutriscore_grade).toUpperCase()}</span></>
+            )}
+            {item.nova_processing_level != null && (
+              <><span className="item-tooltip-label">NOVA Level</span><span>{String(item.nova_processing_level)} / 4</span></>
+            )}
+            {item.ecoscore != null && (
+              <><span className="item-tooltip-label">Eco-Score</span><span>{String(item.ecoscore)} / 100</span></>
+            )}
+            {item.additives_count != null && (
+              <><span className="item-tooltip-label">Additives</span><span>{String(item.additives_count)}</span></>
+            )}
+            {item.can_donate === true && (
+              <><span className="item-tooltip-label">Donatable</span><span style={{ color: '#90caf9' }}>✓</span></>
+            )}
+          </div>
+          <div className="item-tooltip-grid">
+            {item.vegan_match != null && (
+              <><span className="item-tooltip-label">Vegan</span><span>{String(item.vegan_match)}%</span></>
+            )}
+            {item.vegetarian_match != null && (
+              <><span className="item-tooltip-label">Vegetarian</span><span>{String(item.vegetarian_match)}%</span></>
+            )}
+            {item.low_fat_match != null && (
+              <><span className="item-tooltip-label">Low Fat</span><span>{String(item.low_fat_match)}%</span></>
+            )}
+            {item.low_sugar_match != null && (
+              <><span className="item-tooltip-label">Low Sugar</span><span>{String(item.low_sugar_match)}%</span></>
+            )}
+            {item.low_salt_match != null && (
+              <><span className="item-tooltip-label">Low Salt</span><span>{String(item.low_salt_match)}%</span></>
+            )}
+            {item.contains_meat != null && (
+              <><span className="item-tooltip-label">Contains Meat</span><span>{item.contains_meat ? 'Yes' : 'No'}</span></>
+            )}
+            {item.contains_dairy != null && (
+              <><span className="item-tooltip-label">Contains Dairy</span><span>{item.contains_dairy ? 'Yes' : 'No'}</span></>
+            )}
+          </div>
+        </div>
+        {item.allergens && item.allergens !== 'Unknown' && (
+          <div className="item-tooltip-section">
+            <span className="item-tooltip-label">Allergens</span>
+            <p className="item-tooltip-text">{String(item.allergens)}</p>
+          </div>
+        )}
+        {item.ingredients_text && item.ingredients_text !== 'Unknown' && (
+          <div className="item-tooltip-section">
+            <span className="item-tooltip-label">Ingredients</span>
+            <p className="item-tooltip-text item-tooltip-text--clamp">{String(item.ingredients_text)}</p>
+          </div>
+        )}
+      </>
+    )
   }
 
   return (
@@ -743,6 +1292,18 @@ function Home() {
                   <button className="home-dropdown-item" onClick={() => { setEditingUsername(true); setNewUsername('') }}>
                     <UserPen size={15} />
                     Change Username
+                  </button>
+                  <button className="home-dropdown-item" onClick={openHistoryModal}>
+                    <Receipt size={15} />
+                    History
+                  </button>
+                  <button className="home-dropdown-item" onClick={openFavoriteRecipesModal}>
+                    <span>⭐</span>
+                    Favorited Recipes
+                  </button>
+                  <button className="home-dropdown-item" onClick={toggleDailyMoodEnabled}>
+                    <span>{dailyMoodEnabled ? '☀️' : '🌙'}</span>
+                    Daily Mood Prompt: {dailyMoodEnabled ? 'On' : 'Off'}
                   </button>
                   <div className="home-dropdown-divider" />
                   <button className="home-dropdown-item home-dropdown-item--danger" onClick={handleSignOut}>
@@ -780,6 +1341,9 @@ function Home() {
         </button>
         <button className={`home-tab ${activePage === 'perishthreats' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('perishthreats')} data-hint="See items nearing expiry and AI meal suggestions">
           Defeat PerishThreats
+        </button>
+        <button className={`home-tab ${activePage === 'health' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('health')} data-hint="AI analysis of potential mental and physical health risks">
+          Health Impacts
         </button>
         <button className={`home-tab ${activePage === 'ai' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('ai')} data-hint="Chat with Carry the chatbot to learn more about your pantry">
           Carry AI Assistant
@@ -1170,9 +1734,12 @@ function Home() {
               <p>No suggestions yet — add items to your pantry to receive personalised meal ideas!</p>
             </div>
           )}
-          {!threatsLoading && perishThreats.map((threat: any, i: number) => {
+          {!threatsLoading && perishThreats.map((threat, i) => {
             const embedUrl = threat.youtube_url ? getYouTubeEmbedUrl(threat.youtube_url) : null
             const collapsed = collapsedThreats.has(i)
+            const favorited = isRecipeFavorited(threat)
+            const favSig = recipeSignature(threat)
+            const favoriting = favoritePending.has(favSig)
             return (
               <div key={i} className={`pt-threat-card${collapsed ? ' pt-threat-card--collapsed' : ''}`}>
                 <button className="pt-threat-header" onClick={() => toggleThreat(i)}>
@@ -1180,6 +1747,23 @@ function Home() {
                   {threat.description && !collapsed && (
                     <span className="pt-threat-desc">{threat.description}</span>
                   )}
+                  <span
+                    className={`pt-favorite-star${favorited ? ' pt-favorite-star--active' : ''}${favoriting ? ' pt-favorite-star--pending' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={favorited ? 'Unfavorite recipe' : 'Favorite recipe'}
+                    title={favorited ? 'Unfavorite recipe' : 'Favorite recipe'}
+                    onClick={e => { e.stopPropagation(); toggleFavoriteRecipe(threat) }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        toggleFavoriteRecipe(threat)
+                      }
+                    }}
+                  >
+                    ⭐
+                  </span>
                   <span className="pt-threat-chevron">{collapsed ? '▸' : '▾'}</span>
                 </button>
                 {!collapsed && <div className="pt-threat-body">
@@ -1211,7 +1795,7 @@ function Home() {
                   <div className="pt-threat-ing-col">
                     <p className="pt-threat-ing-title">Ingredients</p>
                     <ul className="pt-threat-ing-list">
-                      {(threat.ingredients ?? []).map((ing: any, j: number) => {
+                      {(threat.ingredients ?? []).map((ing, j) => {
                         const exp = getExpiryStatus(ing.expiry_date)
                         return (
                           <li key={j} className="pt-threat-ing-item">
@@ -1245,6 +1829,111 @@ function Home() {
               </div>
             )
           })}
+        </main>
+      )}
+
+      {/* Page: Health Impacts */}
+      {activePage === 'health' && (
+        <main className="home-main health-page">
+          <div className="health-header">
+            <div>
+              <h2 className="health-title">AI Ingredient Screening</h2>
+            </div>
+            <div className="health-progress-wrap">
+              {healthLoading && <span className="health-progress-spinner" />}
+              <span className="health-progress-text">
+                {healthProgress.total > 0
+                  ? `${Math.min(healthProgress.processed, healthProgress.total)}/${healthProgress.total} analyzed`
+                  : 'Analyzing…'}
+              </span>
+            </div>
+          </div>
+
+          {healthError && <p className="health-error">{healthError}</p>}
+
+          {!healthError && !healthLoading && healthMentalHits.length === 0 && healthPhysicalHits.length === 0 && (
+            <p className="pt-empty">No notable negative mental or physical health risks detected in your pantry items.</p>
+          )}
+
+          {!healthError && (healthLoading || healthMentalHits.length > 0 || healthPhysicalHits.length > 0) && (
+            <div className="health-columns">
+              <section className="health-col health-col--mental">
+                <h3 className="health-col-title">🧠 Mental Health</h3>
+                {healthMentalHits.length === 0 && !healthLoading ? (
+                  <p className="health-col-empty">No flagged items.</p>
+                ) : (
+                  <div className="health-list">
+                    {healthMentalHits.map((hit, idx) => {
+                      const key = (hit.item_id && hit.item_id.trim()) || `${hit.name.toLowerCase()}-${idx}`
+                      const collapsed = !healthCollapsedMental.has(key)
+                      const matched = findPantryItemForHit(hit)
+                      return (
+                        <div key={`mental-${key}`} className={`health-item-card${collapsed ? ' health-item-card--collapsed' : ''}`}>
+                          <button className="health-item-header" onClick={() => toggleHealthMental(key)}>
+                            <span className="health-item-name">{hit.name}</span>
+                            <span className="health-item-header-meta">
+                              <span className="health-item-flag" title={hit.reason}>{getHealthReasonTag(hit.reason)}</span>
+                              <span className="health-item-chevron">{collapsed ? '▸' : '▾'}</span>
+                            </span>
+                          </button>
+                          {!collapsed && (
+                            <div className="health-item-body">
+                              <p className="health-item-summary">{hit.reason}</p>
+                              {matched ? (
+                                <div className="health-item-details">
+                                                  {renderPantryDetailContent(matched)}
+                                </div>
+                              ) : (
+                                <p className="health-item-details-empty">No additional pantry details available.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <section className="health-col health-col--physical">
+                <h3 className="health-col-title">💪 Physical Health</h3>
+                {healthPhysicalHits.length === 0 && !healthLoading ? (
+                  <p className="health-col-empty">No flagged items.</p>
+                ) : (
+                  <div className="health-list">
+                    {healthPhysicalHits.map((hit, idx) => {
+                      const key = (hit.item_id && hit.item_id.trim()) || `${hit.name.toLowerCase()}-${idx}`
+                      const collapsed = !healthCollapsedPhysical.has(key)
+                      const matched = findPantryItemForHit(hit)
+                      return (
+                        <div key={`physical-${key}`} className={`health-item-card${collapsed ? ' health-item-card--collapsed' : ''}`}>
+                          <button className="health-item-header" onClick={() => toggleHealthPhysical(key)}>
+                            <span className="health-item-name">{hit.name}</span>
+                            <span className="health-item-header-meta">
+                              <span className="health-item-flag" title={hit.reason}>{getHealthReasonTag(hit.reason)}</span>
+                              <span className="health-item-chevron">{collapsed ? '▸' : '▾'}</span>
+                            </span>
+                          </button>
+                          {!collapsed && (
+                            <div className="health-item-body">
+                              <p className="health-item-summary">{hit.reason}</p>
+                              {matched ? (
+                                <div className="health-item-details">
+                                  {renderPantryDetailContent(matched)}
+                                </div>
+                              ) : (
+                                <p className="health-item-details-empty">No additional pantry details available.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
         </main>
       )}
 
@@ -1316,6 +2005,9 @@ function Home() {
       {manualAddOpen && (
         <div className="manual-add-backdrop" onClick={() => setManualAddOpen(false)}>
           <div className="manual-add-modal" onClick={e => e.stopPropagation()}>
+            <button className="manual-add-close" onClick={() => setManualAddOpen(false)} aria-label="Close add item modal">
+              <X size={18} />
+            </button>
             <h2 className="manual-add-title">Add Item to Pantry</h2>
             <div className="manual-add-fields">
               <label className="manual-add-label">Item Name *
@@ -1359,6 +2051,224 @@ function Home() {
         </div>
       )}
 
+      {/* Daily Mood Modal */}
+      {moodModalOpen && (
+        <div className="mood-backdrop" onClick={e => { if (e.target === e.currentTarget) closeMoodModal() }}>
+          <div className="mood-modal">
+            <button className="mood-close" onClick={closeMoodModal} aria-label="Close mood modal">
+              <X size={20} />
+            </button>
+
+            <h2 className="mood-title">Daily Check-In</h2>
+
+            <div className="mood-carry-row">
+              <img
+                src="carry-icon.png"
+                alt="Carry"
+                className={`mood-carry-icon${moodPhase === 'loading' ? ' carry-icon--spinning' : ''}`}
+              />
+              <div className="mood-bubble">
+                {moodPhase === 'loading'
+                  ? 'Thinking of something uplifting for you…'
+                  : moodPhase === 'response'
+                    ? (moodQuote || 'You’ve got this — one step at a time today.')
+                    : moodPhase === 'error'
+                      ? (moodError || 'I couldn’t load your quote right now, but you’ve still got this today.')
+                      : 'How are you today on a 1–10 scale?'}
+              </div>
+            </div>
+
+            {(moodPhase === 'input' || moodPhase === 'error') && (
+              <div className="mood-slider-wrap">
+                <div className="mood-slider-labels">
+                  <span>0</span>
+                  <span className="mood-slider-value">{moodScore}</span>
+                  <span>10</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={10}
+                  step={1}
+                  value={moodScore}
+                  onChange={e => setMoodScore(Number(e.target.value))}
+                  className="mood-slider"
+                />
+                <div className="mood-actions">
+                  <button className="mood-submit" onClick={submitMoodScore}>
+                    Submit
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {moodPhase === 'response' && (
+              <div className="mood-actions">
+                <button className="mood-submit" onClick={closeMoodModal}>Close</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Favorited Recipes Modal */}
+      {favoriteRecipesOpen && (
+        <div className="favrec-backdrop" onClick={e => { if (e.target === e.currentTarget) closeFavoriteRecipesModal() }}>
+          <div className="favrec-modal">
+            <button className="favrec-close" onClick={closeFavoriteRecipesModal} aria-label="Close favorited recipes">
+              <X size={20} />
+            </button>
+
+            <h2 className="favrec-title">Favorited Recipes</h2>
+            <p className="favrec-subtitle">Your saved PerishThreat recipes</p>
+
+            {favoriteRecipesLoading && <p className="favrec-state">Loading favorites…</p>}
+            {!favoriteRecipesLoading && favoriteRecipesError && <p className="favrec-state favrec-state--error">{favoriteRecipesError}</p>}
+            {!favoriteRecipesLoading && !favoriteRecipesError && favoriteRecipes.length === 0 && (
+              <p className="favrec-state">No favorited recipes yet.</p>
+            )}
+
+            {!favoriteRecipesLoading && !favoriteRecipesError && favoriteRecipes.length > 0 && (
+              <div className="favrec-list">
+                {favoriteRecipes.map((recipe, i) => {
+                  const embedUrl = recipe.youtube_url ? getYouTubeEmbedUrl(recipe.youtube_url) : null
+                  const collapsed = collapsedFavoriteRecipes.has(recipe.favorite_id)
+                  return (
+                    <div key={recipe.favorite_id || `fav-${i}`} className={`pt-threat-card${collapsed ? ' pt-threat-card--collapsed' : ''}`}>
+                      <button className="pt-threat-header" onClick={() => toggleFavoriteRecipeCollapse(recipe.favorite_id)}>
+                        <span className="pt-threat-meal-type">{recipe.meal_type ?? 'Meal Suggestion'}</span>
+                        {recipe.description && !collapsed && (
+                          <span className="pt-threat-desc">{recipe.description}</span>
+                        )}
+                        <span className="pt-favorite-star pt-favorite-star--active" title="Favorited">⭐</span>
+                        <span className="pt-threat-chevron">{collapsed ? '▸' : '▾'}</span>
+                      </button>
+
+                      {!collapsed && <div className="pt-threat-body">
+                        <div className="pt-threat-img-col">
+                          {recipe.image_url
+                            ? <img src={recipe.image_url} alt={recipe.meal_type} className="pt-threat-img" />
+                            : <div className="pt-threat-img-placeholder">No Image</div>}
+                        </div>
+
+                        <div className="pt-threat-video-col">
+                          {embedUrl
+                            ? (
+                              <iframe
+                                className="pt-threat-video"
+                                src={embedUrl}
+                                title={recipe.meal_type}
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                              />
+                            ) : (
+                              <div className="pt-threat-video-placeholder">
+                                <span>No video available</span>
+                              </div>
+                            )}
+                        </div>
+
+                        <div className="pt-threat-ing-col">
+                          <p className="pt-threat-ing-title">Ingredients</p>
+                          <ul className="pt-threat-ing-list">
+                            {(recipe.ingredients ?? []).map((ing, j) => {
+                              const exp = getExpiryStatus(ing.expiry_date)
+                              return (
+                                <li key={j} className="pt-threat-ing-item">
+                                  <div className="pt-threat-ing-left">
+                                    {ing.image_url && (
+                                      <img src={ing.image_url} alt={ing.name} className="pt-threat-ing-img" />
+                                    )}
+                                    <span className="pt-threat-ing-name">{ing.name}</span>
+                                  </div>
+                                  {ing.in_inventory === false
+                                    ? <span className="pt-card-ing-expiry expiry-unknown">Unstocked</span>
+                                    : <span className={`pt-card-ing-expiry ${exp.cls}`}>
+                                        {exp.label}
+                                        {exp.days !== null && exp.days > 0 && (
+                                          <span className="pt-expiry-days">~{exp.days}d</span>
+                                        )}
+                                      </span>
+                                  }
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      </div>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {historyOpen && (
+        <div className="history-backdrop" onClick={e => { if (e.target === e.currentTarget) closeHistoryModal() }}>
+          <div className="history-modal">
+            <button className="history-close" onClick={closeHistoryModal} aria-label="Close history">
+              <X size={20} />
+            </button>
+            <h2 className="history-title">History</h2>
+            <p className="history-subtitle">Consumed and trashed items</p>
+
+            {historyLoading && <p className="history-state">Loading history…</p>}
+            {!historyLoading && historyError && <p className="history-state history-state--error">{historyError}</p>}
+            {!historyLoading && !historyError && historyItems.length === 0 && (
+              <p className="history-state">No history yet.</p>
+            )}
+
+            {!historyLoading && !historyError && historyItems.length > 0 && (
+              <div className="history-table-wrap">
+                <table className="history-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Status</th>
+                      <th>When</th>
+                      <th>Category</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyItems.map((item, i) => {
+                      const action = String(item.history_action ?? 'consumed')
+                      const tsRaw = item.history_at ?? item.consumed_at ?? item.trashed_at
+                      const tsDate = new Date(
+                        typeof tsRaw === 'object' && tsRaw && '_seconds' in (tsRaw as Record<string, unknown>)
+                          ? Number((tsRaw as Record<string, unknown>)._seconds) * 1000
+                          : String(tsRaw ?? '')
+                      )
+                      const when = isNaN(tsDate.getTime()) ? '—' : tsDate.toLocaleString()
+                      const category = item.category && item.category !== 'Unknown' ? String(item.category) : '—'
+                      return (
+                        <tr key={`${String(item.item_id ?? i)}-${i}`}>
+                          <td className="history-name-cell">
+                            {item.image_url
+                              ? <img src={String(item.image_url)} alt={String(item.name ?? '')} className="history-thumb" />
+                              : <div className="history-thumb history-thumb--placeholder"><Package size={14} /></div>}
+                            <span>{String(item.name ?? 'Unknown Item')}</span>
+                          </td>
+                          <td>
+                            <span className={`history-action-badge ${action === 'trashed' ? 'history-action-badge--trashed' : 'history-action-badge--consumed'}`}>
+                              {action === 'trashed' ? 'Trashed' : 'Consumed'}
+                            </span>
+                          </td>
+                          <td>{when}</td>
+                          <td>{category}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Devour full-screen overlay */}
       {devourOverlay && (
         <div
@@ -1389,8 +2299,7 @@ function Home() {
 
       {/* Pantry item hover tooltip */}
       {hoveredItem && (() => {
-        const item = hoveredItem as Record<string, string | number | boolean | null | undefined>
-        const expiry = getExpiryStatus(item.expiry_date)
+        const item = hoveredItem
         const vw = window.innerWidth
         const vh = window.innerHeight
         const tipW = 560, tipH = 320
@@ -1405,67 +2314,7 @@ function Home() {
               )}
               <p className="item-tooltip-name">{String(item.name ?? '')}</p>
             </div>
-            {/* Two-column stats */}
-            <div className="item-tooltip-body">
-              <div className="item-tooltip-grid">
-                {item.category && item.category !== 'Unknown' && (
-                  <><span className="item-tooltip-label">Category</span><span>{String(item.category)}</span></>
-                )}
-                <span className="item-tooltip-label">Expiry</span>
-                <span className={`item-tooltip-expiry ${expiry.cls}`}>{expiry.label}{expiry.days !== null && expiry.days > 0 ? ` (~${expiry.days}d)` : ''}</span>
-                {item.nutriscore_grade && item.nutriscore_grade !== 'Unknown' && (
-                  <><span className="item-tooltip-label">Nutri-Score</span><span className={`item-tooltip-nutri tag-nutri-${String(item.nutriscore_grade).toLowerCase()}`}>{String(item.nutriscore_grade).toUpperCase()}</span></>
-                )}
-                {item.nova_processing_level != null && (
-                  <><span className="item-tooltip-label">NOVA Level</span><span>{String(item.nova_processing_level)} / 4</span></>
-                )}
-                {item.ecoscore != null && (
-                  <><span className="item-tooltip-label">Eco-Score</span><span>{String(item.ecoscore)} / 100</span></>
-                )}
-                {item.additives_count != null && (
-                  <><span className="item-tooltip-label">Additives</span><span>{String(item.additives_count)}</span></>
-                )}
-                {item.can_donate === true && (
-                  <><span className="item-tooltip-label">Donatable</span><span style={{ color: '#90caf9' }}>✓</span></>
-                )}
-              </div>
-              <div className="item-tooltip-grid">
-                {item.vegan_match != null && (
-                  <><span className="item-tooltip-label">Vegan</span><span>{String(item.vegan_match)}%</span></>
-                )}
-                {item.vegetarian_match != null && (
-                  <><span className="item-tooltip-label">Vegetarian</span><span>{String(item.vegetarian_match)}%</span></>
-                )}
-                {item.low_fat_match != null && (
-                  <><span className="item-tooltip-label">Low Fat</span><span>{String(item.low_fat_match)}%</span></>
-                )}
-                {item.low_sugar_match != null && (
-                  <><span className="item-tooltip-label">Low Sugar</span><span>{String(item.low_sugar_match)}%</span></>
-                )}
-                {item.low_salt_match != null && (
-                  <><span className="item-tooltip-label">Low Salt</span><span>{String(item.low_salt_match)}%</span></>
-                )}
-                {item.contains_meat != null && (
-                  <><span className="item-tooltip-label">Contains Meat</span><span>{item.contains_meat ? 'Yes' : 'No'}</span></>
-                )}
-                {item.contains_dairy != null && (
-                  <><span className="item-tooltip-label">Contains Dairy</span><span>{item.contains_dairy ? 'Yes' : 'No'}</span></>
-                )}
-              </div>
-            </div>
-            {/* Full-width text sections */}
-            {item.allergens && item.allergens !== 'Unknown' && (
-              <div className="item-tooltip-section">
-                <span className="item-tooltip-label">Allergens</span>
-                <p className="item-tooltip-text">{String(item.allergens)}</p>
-              </div>
-            )}
-            {item.ingredients_text && item.ingredients_text !== 'Unknown' && (
-              <div className="item-tooltip-section">
-                <span className="item-tooltip-label">Ingredients</span>
-                <p className="item-tooltip-text item-tooltip-text--clamp">{String(item.ingredients_text)}</p>
-              </div>
-            )}
+            {renderPantryDetailContent(item)}
           </div>
         )
       })()}

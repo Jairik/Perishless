@@ -13,6 +13,11 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  const getErrorMessage = (err: unknown): string => {
+    if (err instanceof Error && err.message) return err.message;
+    return 'Registration failed. Please try again.';
+  };
+
   const handleGoogleSignIn = async () => {
     setError('');
     setLoading(true);
@@ -20,8 +25,8 @@ export default function Register() {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
       navigate('/');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -45,8 +50,8 @@ export default function Register() {
     try {
       await createUserWithEmailAndPassword(auth, email, password);
       navigate('/');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }

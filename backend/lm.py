@@ -84,6 +84,30 @@ def gemini_chat_response(message: str, tier: str = "fast", pantry_items: list[di
 	return (response.text or "").strip()
 
 
+def generate_daily_motivational_quote(mood_score: float, tier: str = "fast") -> str:
+	"""Generate a short motivational quote tailored to a user's self-rated daily mood (0-10)."""
+	client = _get_client()
+
+	clamped = max(0.0, min(10.0, float(mood_score)))
+	prompt = (
+		"You are Carry, a supportive and kind carrot assistant. "
+		"Given a user's mood score from 0 to 10, write one brief motivational quote for today. "
+		"Tone rules: warm, practical, non-judgmental, never preachy. "
+		"Keep it to one or two short sentences max. "
+		"If mood is low, prioritize encouragement and small achievable steps. "
+		"If mood is high, reinforce momentum with grounded positivity. "
+		"Do not mention clinical advice, diagnosis, or therapy directives. "
+		"Return plain text only (no markdown, no bullet points, no labels).\n\n"
+		f"Mood score: {clamped:.1f}/10"
+	)
+
+	response = client.models.generate_content(model=_select_model(tier), contents=prompt)
+	text = (response.text or "").strip()
+	if not text:
+		return "One small step today still counts—keep going, you’re doing better than you think."
+	return text
+
+
 def generate_recipe_recommendation(items: list[dict[str, Any]], tier: str = "strong") -> str:
 	"""Generate a plain-text recipe recommendation that uses soon-to-expire pantry items.
 
@@ -360,6 +384,9 @@ def analyze_health_impacts(items: list[dict[str, Any]], tier: str = "fast") -> d
 		"For physical-health risk, look for plausible cardiometabolic, inflammatory, GI, allergy, or long-term diet quality concerns. "
 		"Only flag when there is a meaningful possibility; otherwise keep impact false. "
 		"Reasons must be exactly one concise sentence and reference the likely ingredient/profile driver. "
+		"Each reason MUST start with a short 1-3 word Driver label followed by a colon, then the sentence. "
+		"Use one of these Driver labels whenever applicable: Empty Calories, High Sugar, High Sodium, Saturated Fat, Ultra-Processed, Additives, Caffeine, Allergen Risk, Sleep Impact, Mood Impact, Digestive Stress, Inflammation Risk. "
+		"Example reason format: 'Empty Calories: Alcohol contributes calories with little nutritional value and can worsen metabolic strain over time.' "
 		"Do not give medical diagnosis.\n\n"
 		"Return ONLY valid JSON (no markdown):\n"
 		"{\n"

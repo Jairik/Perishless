@@ -1,14 +1,15 @@
 # Main entry point for the FastAPI backend, where all API endpoints are defined and implemented
 import asyncio
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
-from docstore import create_user, add_food_item, get_food_items, delete_food_item, consume_food_item, update_item_image
+from docstore import create_user, add_food_item, get_food_items, delete_food_item, consume_food_item, trash_food_item, get_history_items, add_favorited_recipe, remove_favorited_recipe, get_favorited_recipes, update_item_image
 from oof import get_product_info, find_products_by_name
-from lm import generate_recipe_recommendation, generate_expiry_recipe, gemini_chat_response, fill_item_details_from_name, generate_perishthreats, parse_receipt_items, analyze_health_impacts
+from lm import generate_recipe_recommendation, generate_expiry_recipe, gemini_chat_response, fill_item_details_from_name, generate_perishthreats, parse_receipt_items, analyze_health_impacts, generate_daily_motivational_quote
 from scan_doc import detect_barcode, ocr_receipt
 from rdb import ensure_autocomplete_table, autocomplete_food_items, upsert_food_name, update_product_image, find_barcode_by_name
 
@@ -221,9 +222,19 @@ async def delete_item(uuid: str, item_id: str, consumed: bool = False):
     if consumed:
         await run_in_threadpool(consume_food_item, uuid, item_id)
     else:
-        await run_in_threadpool(delete_food_item, uuid, item_id)
+        await run_in_threadpool(trash_food_item, uuid, item_id)
     _invalidate_pantry(uuid)
     return {"status": "success"}
+
+
+# Fetch a user's consumption/trash history, newest first
+@app.get("/api/history/{uuid}")
+async def get_history(uuid: str, limit: int = 300):
+    try:
+        rows = await run_in_threadpool(get_history_items, uuid, max(1, min(limit, 1000)))
+        return {"status": "success", "results": rows}
+    except Exception:
+        return {"status": "error", "message": "Failed to fetch history.", "results": []}
 
 
 # Autocomplete endpoint — fast local trigram search against the relational DB
@@ -358,6 +369,15 @@ class RegenerateThreatsRequest(BaseModel):
     instructions: str | None = None
     count: int = 2
 
+
+class MoodQuoteRequest(BaseModel):
+    score: float
+
+
+class FavoriteRecipeRequest(BaseModel):
+    signature: str | None = None
+    recipe: dict[str, Any]
+
 # Regenerate PerishThreats with optional custom instructions
 @app.post("/api/perishthreats/{uuid}")
 async def regenerate_perishthreats(uuid: str, body: RegenerateThreatsRequest):
@@ -368,6 +388,51 @@ async def regenerate_perishthreats(uuid: str, body: RegenerateThreatsRequest):
         generate_perishthreats, items, max(1, min(body.count, 5)), "strong", body.instructions
     )
     return threats
+
+
+# Generate a daily motivational quote from a user's self-rated mood score (0-10)
+@app.post("/api/moodQuote/{uuid}")
+async def mood_quote(uuid: str, body: MoodQuoteRequest):
+    score = max(0.0, min(10.0, body.score))
+    try:
+        quote = await run_in_threadpool(generate_daily_motivational_quote, score, "fast")
+        return {"status": "success", "score": score, "quote": quote}
+    except Exception:
+        return {
+            "status": "error",
+            "message": "Failed to generate motivational quote.",
+            "quote": "One small step today still counts—keep going, you’re doing better than you think.",
+        }
+
+
+# Favorite a recipe for a user
+@app.post("/api/favorites/{uuid}")
+async def favorite_recipe(uuid: str, body: FavoriteRecipeRequest):
+    try:
+        item = await run_in_threadpool(add_favorited_recipe, uuid, body.recipe, body.signature)
+        return {"status": "success", "item": item}
+    except Exception:
+        return {"status": "error", "message": "Failed to favorite recipe."}
+
+
+# Remove a favorited recipe for a user
+@app.delete("/api/favorites/{uuid}")
+async def unfavorite_recipe(uuid: str, body: FavoriteRecipeRequest):
+    try:
+        removed = await run_in_threadpool(remove_favorited_recipe, uuid, body.recipe, body.signature)
+        return {"status": "success", "removed": removed}
+    except Exception:
+        return {"status": "error", "message": "Failed to remove favorited recipe."}
+
+
+# Fetch all favorited recipes for a user, newest first
+@app.get("/api/favorites/{uuid}")
+async def get_favorites(uuid: str, limit: int = 300):
+    try:
+        rows = await run_in_threadpool(get_favorited_recipes, uuid, max(1, min(limit, 1000)))
+        return {"status": "success", "results": rows}
+    except Exception:
+        return {"status": "error", "message": "Failed to fetch favorited recipes.", "results": []}
 
 
 # Generate a single expiry-prioritised recipe as structured JSON, scoped to user uuid

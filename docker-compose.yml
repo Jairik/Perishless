@@ -1,0 +1,21 @@
+services:
+
+  # Backend service - run the FastAPI backend
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: perishless-backend
+    restart: always
+    ports:
+      - "8000:8000"
+
+  # Frontend service - run the React frontend with nginx serving the built files
+  frontend:
+    build: ./frontend
+    container_name: perishless-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"

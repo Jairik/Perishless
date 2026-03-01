@@ -3,6 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import type { User } from 'firebase/auth'
 import { auth } from './firebase'
 
+// eslint-disable-next-line react-refresh/only-export-components
 export { auth }
 
 interface AuthContextValue {
@@ -36,11 +37,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext)
 }
 
 /** Synchronously returns the current user's Firebase UID, or null if not signed in. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function get_uuid(): string | null {
   return auth.currentUser?.uid ?? null
 }

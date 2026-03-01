@@ -1,5 +1,7 @@
 # All functions and configurations regarding the Firestore Database document store
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 import os
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -193,12 +195,95 @@ def update_item_image(uuid: str, item_id: str, image_url: str) -> None:
 def delete_food_item(uuid: str, item_id: str):
     item_ref = db.collection("users").document(uuid).collection("items").document(item_id)
     item_ref.delete()
+
+
+def move_food_item_to_history(uuid: str, item_id: str, action: str) -> bool:
+    """Move a pantry item into the user's history collection with an action marker."""
+    item_ref = db.collection("users").document(uuid).collection("items").document(item_id)
+    item_snap = item_ref.get()
+    item_data = item_snap.to_dict() if item_snap.exists else None
+    if not item_data:
+        return False
+
+    timestamp_field = "consumed_at" if action == "consumed" else "trashed_at"
+    history_ref = db.collection("users").document(uuid).collection("history").document(item_id)
+    history_ref.set({
+        **item_data,
+        "history_action": action,
+        "history_at": firestore.SERVER_TIMESTAMP,
+        timestamp_field: firestore.SERVER_TIMESTAMP,
+    })
+    item_ref.delete()
+    return True
     
 # "Consume" a food item, moving it to a "history" collection with a timestamp
 def consume_food_item(uuid: str, item_id: str):
-    item_ref = db.collection("users").document(uuid).collection("items").document(item_id)
-    item_data = item_ref.get().to_dict()
-    if item_data:
-        history_ref = db.collection("users").document(uuid).collection("history").document(item_id)
-        history_ref.set({**item_data, "consumed_at": firestore.SERVER_TIMESTAMP})
-        item_ref.delete()
+    move_food_item_to_history(uuid, item_id, "consumed")
+
+
+def trash_food_item(uuid: str, item_id: str):
+    move_food_item_to_history(uuid, item_id, "trashed")
+
+
+def get_history_items(uuid: str, limit: int = 300):
+    """Return history records for a user, newest first."""
+    history_ref = db.collection("users").document(uuid).collection("history")
+    query = history_ref.order_by("history_at", direction=firestore.Query.DESCENDING).limit(max(1, limit))
+    rows = []
+    for doc in query.stream():
+        data = doc.to_dict() or {}
+        action = data.get("history_action")
+        if not action:
+            if data.get("trashed_at"):
+                action = "trashed"
+            elif data.get("consumed_at"):
+                action = "consumed"
+            else:
+                action = "consumed"
+        rows.append({"item_id": doc.id, **data, "history_action": action})
+    return rows
+
+
+def _favorite_recipe_doc_id(recipe_data: dict, recipe_signature: str | None = None) -> str:
+    """Build a stable Firestore-safe document id for a favorited recipe."""
+    if recipe_signature and recipe_signature.strip():
+        source = recipe_signature.strip().lower()
+    else:
+        source = json.dumps(recipe_data or {}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def add_favorited_recipe(uuid: str, recipe_data: dict, recipe_signature: str | None = None) -> dict:
+    """Upsert a favorited recipe for the user and return stored record metadata."""
+    recipe_data = dict(recipe_data or {})
+    recipe_id = _favorite_recipe_doc_id(recipe_data, recipe_signature)
+    signature = recipe_signature.strip() if recipe_signature else None
+    ref = db.collection("users").document(uuid).collection("favorited_recipes").document(recipe_id)
+    ref.set({
+        **recipe_data,
+        "recipe_signature": signature,
+        "favorited_at": firestore.SERVER_TIMESTAMP,
+    })
+    return {"favorite_id": recipe_id, "recipe_signature": signature, **recipe_data}
+
+
+def remove_favorited_recipe(uuid: str, recipe_data: dict | None = None, recipe_signature: str | None = None) -> bool:
+    """Remove a favorited recipe by signature or recipe payload-derived id."""
+    recipe_id = _favorite_recipe_doc_id(recipe_data or {}, recipe_signature)
+    ref = db.collection("users").document(uuid).collection("favorited_recipes").document(recipe_id)
+    snap = ref.get()
+    if not snap.exists:
+        return False
+    ref.delete()
+    return True
+
+
+def get_favorited_recipes(uuid: str, limit: int = 300):
+    """Return favorited recipes newest first."""
+    coll = db.collection("users").document(uuid).collection("favorited_recipes")
+    query = coll.order_by("favorited_at", direction=firestore.Query.DESCENDING).limit(max(1, limit))
+    rows = []
+    for doc in query.stream():
+        data = doc.to_dict() or {}
+        rows.append({"favorite_id": doc.id, **data})
+    return rows
