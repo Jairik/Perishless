@@ -483,7 +483,6 @@ async def create_global_post(body: CreatePostRequest):
         return {"status": "error", "message": "Failed to create post."}
 
 
-@app.post("/api/posts/{post_id}/kind")
 @app.post("/api/posts/{post_id}/kind/")
 async def toggle_kind(post_id: str, body: TogglePostKindRequest):
     try:
