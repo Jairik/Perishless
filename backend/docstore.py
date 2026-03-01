@@ -104,38 +104,78 @@ def estimate_expiry_date(item_data: dict) -> datetime | None:
 # Determine if a food item can be donated (e.g. to a canned food drive / food bank)
 # based on its stored attributes. Returns True, False, or None if not determinable.
 def determine_can_donate(item_data: dict) -> bool | None:
-    # --- Expiry check: expired items cannot be donated ---
+    # --- Expiry check: expired or near-expiry items cannot be donated ---
+    now = datetime.now(timezone.utc)
+    min_donation_window = now + timedelta(days=90)
+
     expiry = item_data.get("expiry_date")
     if expiry is not None:
         if isinstance(expiry, str):
             try:
-                expiry = datetime.fromisoformat(expiry)
+                expiry = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
             except ValueError:
                 expiry = None
         if expiry is not None:
             if expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
-            if expiry <= datetime.now(timezone.utc):
+            if expiry <= now:
+                return False
+            # Business rule: do not donate foods that expire within 3 months.
+            if expiry <= min_donation_window:
                 return False
 
-    # --- Storage / packaging: refrigerated or frozen items are not suitable ---
+    # --- Normalize commonly inspected fields ---
+    category = (item_data.get("category") or "").lower().strip()
+    name = (item_data.get("name") or "").lower().strip()
+    ingredients_text = (item_data.get("ingredients_text") or "").lower().strip()
+
+    def text_has_any(text: str, keywords: set[str]) -> bool:
+        return any(kw in text for kw in keywords)
+
+    # --- Storage / handling: chilled/frozen/perishable items are not suitable ---
     storage_tags = item_data.get("storage_tags") or []
     if isinstance(storage_tags, str):
         storage_tags = [storage_tags]
-    non_donatable_storage = {"refrigerate", "refrigerated", "frozen", "freeze", "keep-refrigerated", "keep-frozen"}
-    if any(tag.lower().replace(" ", "-") in non_donatable_storage for tag in storage_tags):
+    storage_tags_norm = [tag.lower().replace(" ", "-") for tag in storage_tags if isinstance(tag, str)]
+
+    non_donatable_storage = {
+        "refrigerate", "refrigerated", "keep-refrigerated", "chilled", "keep-chilled",
+        "frozen", "freeze", "keep-frozen", "perishable",
+    }
+    if any(tag in non_donatable_storage for tag in storage_tags_norm):
         return False
 
+    # --- Packaging integrity: opened/damaged packaging cannot be donated ---
     packaging_tags = item_data.get("packaging_tags") or []
     if isinstance(packaging_tags, str):
         packaging_tags = [packaging_tags]
-    # Sealed shelf-stable packaging strongly suggests the item can be donated
-    donatable_packaging = {"can", "canned", "jar", "tetra-pak", "tetra_pak", "box", "carton", "pouch", "sealed", "vacuum"}
-    if any(tag.lower() in donatable_packaging for tag in packaging_tags):
-        return True
+    packaging_tags_norm = [tag.lower().replace(" ", "-") for tag in packaging_tags if isinstance(tag, str)]
+
+    compromised_packaging = {"opened", "open", "unsealed", "damaged", "leaking", "broken", "torn"}
+    if any(tag in compromised_packaging for tag in packaging_tags_norm):
+        return False
+
+    # --- Explicit perishables / unsafe classes ---
+    non_donatable_food_tokens = {
+        "fresh", "raw", "cooked", "ready-to-eat", "leftover", "deli", "prepared",
+        "produce", "fruit", "vegetable", "salad", "sprout", "herb",
+        "meat", "chicken", "beef", "pork", "lamb", "turkey", "bacon", "ham", "sausage",
+        "seafood", "fish", "shellfish", "shrimp", "crab", "lobster",
+        "dairy", "milk", "cheese", "yogurt", "cream", "butter",
+        "egg", "bakery", "bread", "cake", "pastry", "sandwich",
+    }
+    if text_has_any(category, non_donatable_food_tokens) or text_has_any(name, non_donatable_food_tokens):
+        return False
+
+    # Ingredients-based safety signal for items likely requiring refrigeration.
+    non_donatable_ingredient_tokens = {
+        "milk", "cream", "yogurt", "butter", "cheese",
+        "egg", "ground beef", "chicken", "pork", "fish", "shrimp",
+    }
+    if ingredients_text and text_has_any(ingredients_text, non_donatable_ingredient_tokens):
+        return False
 
     # --- Category heuristics ---
-    category = (item_data.get("category") or "").lower()
     donatable_categories = {
         "canned", "pantry", "dry", "cereal", "pasta", "rice", "grain", "bean",
         "legume", "flour", "sugar", "oil", "soup", "sauce", "condiment", "spice",
@@ -145,12 +185,10 @@ def determine_can_donate(item_data: dict) -> bool | None:
     }
     non_donatable_categories = {
         "fresh", "produce", "meat", "seafood", "dairy", "milk", "cheese", "egg",
-        "refrigerated", "frozen", "deli", "bakery", "prepared",
+        "refrigerated", "frozen", "deli", "bakery", "prepared", "leftover", "ready-to-eat",
     }
     if any(kw in category for kw in non_donatable_categories):
         return False
-    if any(kw in category for kw in donatable_categories):
-        return True
 
     # --- Perishable indicators on the item itself ---
     if item_data.get("contains_meat"):
@@ -158,8 +196,18 @@ def determine_can_donate(item_data: dict) -> bool | None:
     if item_data.get("contains_dairy"):
         return False
 
-    # Not enough information to decide
-    return None
+    # --- Positive allow-list: only clearly shelf-stable sealed products are donatable ---
+    donatable_packaging = {
+        "can", "canned", "jar", "tetra-pak", "tetra_pak", "box", "carton", "pouch", "sealed", "vacuum"
+    }
+    has_stable_packaging = any(tag in donatable_packaging for tag in packaging_tags_norm)
+    has_donatable_category = any(kw in category for kw in donatable_categories)
+
+    if has_stable_packaging and has_donatable_category:
+        return True
+
+    # Conservative default to avoid false-positive donation flags.
+    return False
 
 
 # Add a new food item to the user's collection

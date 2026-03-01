@@ -2,9 +2,9 @@
 FROM python:3.12-slim
 
 # Install system dependencies and cleanup apt cache to reduce image size
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
-    tesseract-ocr-eng \
+    opencv-python-headless \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 # Set working directory and download dependencies
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy all backend source code over
 COPY backend/. .
