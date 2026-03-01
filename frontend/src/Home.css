@@ -1699,6 +1699,313 @@
   background: #43a047;
 }
 
+/* ── Global Feed ─────────────────────────────────────────────────────────── */
+.feed-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.feed-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.feed-title {
+  margin: 0;
+  font-size: 1.12rem;
+  color: #c8e6c9;
+}
+
+.feed-plus-btn {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  border: 1px solid rgba(76, 175, 80, 0.55);
+  background: rgba(76, 175, 80, 0.2);
+  color: #d4e8d4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.feed-plus-btn:hover {
+  background: rgba(76, 175, 80, 0.35);
+  border-color: #81c784;
+}
+
+.feed-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.feed-filter-btn {
+  border: 1px solid rgba(76, 175, 80, 0.45);
+  background: rgba(76, 175, 80, 0.08);
+  color: #a8c5a8;
+  border-radius: 999px;
+  padding: 0.28rem 0.62rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.feed-filter-btn:hover {
+  color: #f0f7f0;
+  background: rgba(76, 175, 80, 0.2);
+}
+
+.feed-filter-btn--active {
+  color: #f0f7f0;
+  border-color: #81c784;
+  background: rgba(76, 175, 80, 0.35);
+}
+
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.feed-card {
+  border: 1px solid rgba(76, 175, 80, 0.28);
+  border-radius: 0.7rem;
+  padding: 0.8rem 0.9rem;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.feed-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.feed-author {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #f0f7f0;
+  font-weight: 600;
+}
+
+.feed-date {
+  margin: 0.08rem 0 0;
+  font-size: 0.72rem;
+  color: #88aa88;
+}
+
+.feed-tag {
+  border-radius: 999px;
+  padding: 0.17rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.feed-tag--food-giveaway {
+  background: rgba(129, 199, 132, 0.2);
+  color: #a5d6a7;
+  border: 1px solid rgba(129, 199, 132, 0.45);
+}
+
+.feed-tag--recipe-reccomendation {
+  background: rgba(100, 181, 246, 0.2);
+  color: #90caf9;
+  border: 1px solid rgba(100, 181, 246, 0.45);
+}
+
+.feed-tag--misc {
+  background: rgba(255, 241, 118, 0.18);
+  color: #fff59d;
+  border: 1px solid rgba(255, 241, 118, 0.4);
+}
+
+.feed-content {
+  margin: 0;
+  color: #d4e8d4;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+.feed-location-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.feed-location-label {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #a5d6a7;
+  font-size: 0.8rem;
+}
+
+.feed-map {
+  border: 1px solid rgba(76, 175, 80, 0.26);
+  border-radius: 0.5rem;
+  width: 100%;
+  height: 180px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.feed-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.feed-kind-btn {
+  border: 1px solid rgba(76, 175, 80, 0.42);
+  background: rgba(76, 175, 80, 0.1);
+  color: #a8c5a8;
+  border-radius: 0.45rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.feed-kind-btn:hover {
+  background: rgba(76, 175, 80, 0.22);
+  color: #f0f7f0;
+}
+
+.feed-kind-btn--active {
+  background: rgba(76, 175, 80, 0.35);
+  border-color: #81c784;
+  color: #f0f7f0;
+}
+
+.feed-kind-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.feed-error {
+  margin: 0;
+  color: #ef9a9a;
+  font-size: 0.86rem;
+}
+
+/* Global Feed Post Modal */
+.feed-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8300;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feed-modal {
+  position: relative;
+  width: min(560px, 94vw);
+  background: #1a2e1a;
+  border: 1.5px solid rgba(76, 175, 80, 0.42);
+  border-radius: 0.9rem;
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.feed-modal-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 1.95rem;
+  height: 1.95rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #a8c5a8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.feed-modal-title {
+  margin: 0;
+  font-size: 1.08rem;
+  color: #c8e6c9;
+}
+
+.feed-modal-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #8aac8a;
+  text-transform: uppercase;
+}
+
+.feed-modal-input,
+.feed-modal-select,
+.feed-modal-textarea {
+  border-radius: 0.45rem;
+  border: 1.5px solid rgba(76, 175, 80, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f0f7f0;
+  font-size: 0.88rem;
+  padding: 0.55rem 0.72rem;
+}
+
+.feed-modal-select {
+  color-scheme: dark;
+}
+
+.feed-modal-textarea {
+  resize: vertical;
+}
+
+.feed-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.feed-modal-cancel,
+.feed-modal-submit {
+  border-radius: 0.45rem;
+  padding: 0.42rem 0.9rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.feed-modal-cancel {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #a8c5a8;
+}
+
+.feed-modal-submit {
+  border: 1px solid rgba(76, 175, 80, 0.6);
+  background: rgba(76, 175, 80, 0.25);
+  color: #c8e6c9;
+  font-weight: 700;
+}
+
+.feed-modal-submit:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.38);
+  border-color: #81c784;
+}
+
+.feed-modal-submit:disabled,
+.feed-modal-cancel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* ── Barcode submission status banner ──────────────────────────────────────── */
 .bc-status {
   display: flex;

@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Barcode, CircleUser, LogOut, UserPen, X, Upload, SendHorizonal, CheckCheck, Receipt, HeartHandshake, Package, Palette, Mic, Square, Volume2, VolumeX } from 'lucide-react'
+import { Barcode, CircleUser, LogOut, UserPen, X, Upload, SendHorizonal, CheckCheck, Receipt, HeartHandshake, Package, Palette, Mic, Square, Volume2, VolumeX, Plus, MapPin } from 'lucide-react'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
 import type { Result, Exception } from '@zxing/library'
@@ -56,6 +56,20 @@ interface PerishThreatIngredient {
   in_inventory?: boolean
 }
 
+type PostTag = 'food giveaway' | 'recipe reccomendation' | 'misc'
+
+interface GlobalPost {
+  post_id: string
+  author_uuid?: string
+  author_name?: string
+  content?: string
+  tag: PostTag
+  location?: string
+  kind_count?: number
+  kind_users?: string[]
+  created_at?: unknown
+}
+
 function Home() {
   const navigate = useNavigate()
   const { user: currentUser, uuid, loading: authLoading } = useAuth()
@@ -75,7 +89,7 @@ function Home() {
   const [moodQuote, setMoodQuote] = useState('')
   const [moodError, setMoodError] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
-  const [activePage, setActivePage] = useState<'pantry' | 'perishthreats' | 'health' | 'ai'>('pantry')
+  const [activePage, setActivePage] = useState<'pantry' | 'perishthreats' | 'feed' | 'health' | 'ai'>('pantry')
 
   // Pantry items
   const [pantryItems, setPantryItems] = useState<PantryItem[]>([])
@@ -214,6 +228,17 @@ function Home() {
   const [healthLoading, setHealthLoading] = useState(false)
   const [healthError, setHealthError] = useState('')
   const [healthProgress, setHealthProgress] = useState({ processed: 0, total: 0 })
+  const [globalPosts, setGlobalPosts] = useState<GlobalPost[]>([])
+  const [globalLoading, setGlobalLoading] = useState(false)
+  const [globalError, setGlobalError] = useState('')
+  const [globalFilterTag, setGlobalFilterTag] = useState<'all' | PostTag>('all')
+  const [postModalOpen, setPostModalOpen] = useState(false)
+  const [postText, setPostText] = useState('')
+  const [postTag, setPostTag] = useState<PostTag>('misc')
+  const [postLocation, setPostLocation] = useState('')
+  const [postSubmitting, setPostSubmitting] = useState(false)
+  const [postError, setPostError] = useState('')
+  const [kindPending, setKindPending] = useState<Set<string>>(new Set())
   const [favoriteRecipesOpen, setFavoriteRecipesOpen] = useState(false)
   const [favoriteRecipesLoading, setFavoriteRecipesLoading] = useState(false)
   const [favoriteRecipesError, setFavoriteRecipesError] = useState('')
@@ -291,6 +316,111 @@ function Home() {
       setFavoriteRecipesLoading(false)
     }
   }, [uuid])
+
+  const fetchGlobalPosts = useCallback(async () => {
+    setGlobalLoading(true)
+    setGlobalError('')
+    try {
+      const query = globalFilterTag === 'all' ? '' : `?tag=${encodeURIComponent(globalFilterTag)}`
+      const res = await fetch(`${API}/api/posts${query}`)
+      const raw = await res.text()
+      let data: { status?: string; message?: string; results?: GlobalPost[] } = {}
+      try {
+        data = raw ? JSON.parse(raw) : {}
+      } catch {
+        data = { status: 'error', message: raw || `Server error (${res.status})`, results: [] }
+      }
+
+      if (!res.ok || data.status !== 'success') {
+        setGlobalError(data.message ?? 'Failed to load global posts.')
+        setGlobalPosts([])
+        return
+      }
+
+      setGlobalPosts(Array.isArray(data.results) ? data.results : [])
+    } catch {
+      setGlobalError('Network error — please try again.')
+      setGlobalPosts([])
+    } finally {
+      setGlobalLoading(false)
+    }
+  }, [globalFilterTag])
+
+  async function submitGlobalPost() {
+    if (!uuid) return
+    if (!postText.trim()) {
+      setPostError('Post content cannot be empty.')
+      return
+    }
+    if (postTag === 'food giveaway' && !postLocation.trim()) {
+      setPostError('Location is required for food giveaway posts.')
+      return
+    }
+
+    setPostSubmitting(true)
+    setPostError('')
+    try {
+      const res = await fetch(`${API}/api/posts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uuid,
+          author_name: displayName,
+          content: postText.trim(),
+          tag: postTag,
+          location: postTag === 'food giveaway' ? postLocation.trim() : null,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.status !== 'success' || !data.item) {
+        setPostError(data.message ?? 'Failed to post. Please try again.')
+        return
+      }
+
+      setPostModalOpen(false)
+      setPostText('')
+      setPostTag('misc')
+      setPostLocation('')
+      await fetchGlobalPosts()
+    } catch {
+      setPostError('Network error — please try again.')
+    } finally {
+      setPostSubmitting(false)
+    }
+  }
+
+  async function togglePostKind(postId: string) {
+    if (!uuid || kindPending.has(postId)) return
+    setKindPending(prev => new Set(prev).add(postId))
+    try {
+      const res = await fetch(`${API}/api/posts/${postId}/kind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uuid }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.status !== 'success') return
+
+      setGlobalPosts(prev => prev.map(post => {
+        if (post.post_id !== postId) return post
+        const oldUsers = Array.isArray(post.kind_users) ? post.kind_users : []
+        const nextUsers = data.user_kinded
+          ? Array.from(new Set([...oldUsers, uuid]))
+          : oldUsers.filter(u => u !== uuid)
+        return {
+          ...post,
+          kind_count: typeof data.kind_count === 'number' ? data.kind_count : nextUsers.length,
+          kind_users: nextUsers,
+        }
+      }))
+    } finally {
+      setKindPending(prev => {
+        const next = new Set(prev)
+        next.delete(postId)
+        return next
+      })
+    }
+  }
 
   // Favorite or unfavorite a recipe and sync local UI state.
   async function toggleFavoriteRecipe(recipe: PerishThreat) {
@@ -537,6 +667,10 @@ function Home() {
   useEffect(() => {
     if (activePage === 'perishthreats') fetchPerishThreats()
   }, [activePage, fetchPerishThreats])
+
+  useEffect(() => {
+    if (activePage === 'feed') fetchGlobalPosts()
+  }, [activePage, fetchGlobalPosts])
 
   useEffect(() => {
     if (authLoading || !uuid || !dailyMoodEnabled) return
@@ -1032,6 +1166,10 @@ function Home() {
     return cleaned ? `↑ ${cleaned}` : '↑ Health Risk'
   }
 
+  function getMapEmbedUrl(location: string): string {
+    return `https://www.google.com/maps?q=${encodeURIComponent(location)}&output=embed`
+  }
+
   // Consume a pantry item with optimistic UI removal and rollback on failure.
   async function handleConsume(itemId: string) {
     if (!uuid) return
@@ -1504,6 +1642,9 @@ function Home() {
         </button>
         <button className={`home-tab ${activePage === 'perishthreats' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('perishthreats')} data-hint="See items nearing expiry and AI meal suggestions">
           Defeat PerishThreats
+        </button>
+        <button className={`home-tab ${activePage === 'feed' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('feed')} data-hint="Community global feed for giveaways, recipes, and tips">
+          Global Feed
         </button>
         <button className={`home-tab ${activePage === 'health' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('health')} data-hint="AI analysis of potential mental and physical health risks">
           Health Impacts
@@ -2004,6 +2145,95 @@ function Home() {
         </main>
       )}
 
+      {/* Page: Global Feed */}
+      {activePage === 'feed' && (
+        <main className="home-main feed-page">
+          <div className="feed-topbar">
+            <h2 className="feed-title">Global Community Feed</h2>
+            <button
+              className="feed-plus-btn"
+              onClick={() => {
+                setPostError('')
+                setPostModalOpen(true)
+              }}
+              title="Create post"
+              aria-label="Create post"
+            >
+              <Plus size={18} />
+            </button>
+          </div>
+
+          <div className="feed-filters">
+            {(['all', 'food giveaway', 'recipe reccomendation', 'misc'] as const).map(tag => (
+              <button
+                key={tag}
+                className={`feed-filter-btn${globalFilterTag === tag ? ' feed-filter-btn--active' : ''}`}
+                onClick={() => setGlobalFilterTag(tag)}
+              >
+                {tag === 'all' ? 'All' : tag}
+              </button>
+            ))}
+          </div>
+
+          {globalLoading && <p className="home-page-placeholder">Loading posts…</p>}
+          {!globalLoading && globalError && <p className="feed-error">{globalError}</p>}
+          {!globalLoading && !globalError && globalPosts.length === 0 && (
+            <p className="home-page-placeholder">No posts yet. Be the first to share something kind!</p>
+          )}
+
+          {!globalLoading && !globalError && globalPosts.length > 0 && (
+            <div className="feed-list">
+              {globalPosts.map(post => {
+                const userKinded = !!uuid && (post.kind_users ?? []).includes(uuid)
+                const createdDate = new Date(
+                  typeof post.created_at === 'object' && post.created_at && '_seconds' in (post.created_at as Record<string, unknown>)
+                    ? Number((post.created_at as Record<string, unknown>)._seconds) * 1000
+                    : String(post.created_at ?? '')
+                )
+                const createdLabel = isNaN(createdDate.getTime()) ? 'Just now' : createdDate.toLocaleString()
+
+                return (
+                  <article key={post.post_id} className="feed-card">
+                    <header className="feed-card-header">
+                      <div>
+                        <p className="feed-author">{post.author_name || 'Anonymous'}</p>
+                        <p className="feed-date">{createdLabel}</p>
+                      </div>
+                      <span className={`feed-tag feed-tag--${post.tag.replace(/\s+/g, '-')}`}>{post.tag}</span>
+                    </header>
+
+                    <p className="feed-content">{post.content || ''}</p>
+
+                    {post.tag === 'food giveaway' && post.location && (
+                      <div className="feed-location-wrap">
+                        <p className="feed-location-label"><MapPin size={14} /> {post.location}</p>
+                        <iframe
+                          title={`Map for ${post.location}`}
+                          className="feed-map"
+                          src={getMapEmbedUrl(post.location)}
+                          loading="lazy"
+                          referrerPolicy="no-referrer-when-downgrade"
+                        />
+                      </div>
+                    )}
+
+                    <div className="feed-actions">
+                      <button
+                        className={`feed-kind-btn${userKinded ? ' feed-kind-btn--active' : ''}`}
+                        onClick={() => togglePostKind(post.post_id)}
+                        disabled={kindPending.has(post.post_id)}
+                      >
+                        🤝 Kind ({post.kind_count ?? 0})
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </main>
+      )}
+
       {/* Page: Health Impacts */}
       {activePage === 'health' && (
         <main className="home-main health-page">
@@ -2201,6 +2431,63 @@ function Home() {
             </Button>
           </div>
         </main>
+      )}
+
+      {/* Manual Add Modal */}
+      {postModalOpen && (
+        <div className="feed-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setPostModalOpen(false) }}>
+          <div className="feed-modal">
+            <button className="feed-modal-close" onClick={() => setPostModalOpen(false)} aria-label="Close post modal">
+              <X size={18} />
+            </button>
+            <h2 className="feed-modal-title">Create Post</h2>
+
+            <label className="feed-modal-label">
+              Tag
+              <select
+                className="feed-modal-select"
+                value={postTag}
+                onChange={e => setPostTag(e.target.value as PostTag)}
+              >
+                <option value="food giveaway">food giveaway</option>
+                <option value="recipe reccomendation">recipe reccomendation</option>
+                <option value="misc">misc</option>
+              </select>
+            </label>
+
+            {postTag === 'food giveaway' && (
+              <label className="feed-modal-label">
+                Location
+                <input
+                  className="feed-modal-input"
+                  value={postLocation}
+                  onChange={e => setPostLocation(e.target.value)}
+                  placeholder="City or area (e.g. Newark, NJ)"
+                />
+              </label>
+            )}
+
+            <label className="feed-modal-label">
+              Post
+              <textarea
+                className="feed-modal-textarea"
+                value={postText}
+                onChange={e => setPostText(e.target.value)}
+                placeholder="Share your giveaway, recipe recommendation, or message…"
+                rows={5}
+              />
+            </label>
+
+            {postError && <p className="feed-error">{postError}</p>}
+
+            <div className="feed-modal-actions">
+              <button className="feed-modal-cancel" onClick={() => setPostModalOpen(false)} disabled={postSubmitting}>Cancel</button>
+              <button className="feed-modal-submit" onClick={submitGlobalPost} disabled={postSubmitting || !postText.trim()}>
+                {postSubmitting ? 'Posting…' : 'Post'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Manual Add Modal */}

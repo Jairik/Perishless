@@ -8,7 +8,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
-from docstore import create_user, add_food_item, get_food_items, delete_food_item, consume_food_item, trash_food_item, get_history_items, add_favorited_recipe, remove_favorited_recipe, get_favorited_recipes, update_item_image
+from docstore import create_user, add_food_item, get_food_items, delete_food_item, consume_food_item, trash_food_item, get_history_items, add_favorited_recipe, remove_favorited_recipe, get_favorited_recipes, update_item_image, create_post, get_posts, toggle_post_kind
 from oof import get_product_info, find_products_by_name
 from lm import generate_recipe_recommendation, generate_expiry_recipe, gemini_chat_response, fill_item_details_from_name, generate_perishthreats, parse_receipt_items, analyze_health_impacts, generate_daily_motivational_quote
 from scan_doc import detect_barcode, ocr_receipt
@@ -386,6 +386,21 @@ class TTSRequest(BaseModel):
     voice_id: str | None = None
     model_id: str = "eleven_multilingual_v2"
 
+
+class CreatePostRequest(BaseModel):
+    uuid: str
+    author_name: str
+    content: str
+    tag: str
+    location: str | None = None
+
+
+class TogglePostKindRequest(BaseModel):
+    uuid: str
+
+
+ALLOWED_POST_TAGS = {"food giveaway", "recipe reccomendation", "recipe recommendation", "misc"}
+
 # Regenerate PerishThreats with optional custom instructions
 @app.post("/api/perishthreats/{uuid}")
 async def regenerate_perishthreats(uuid: str, body: RegenerateThreatsRequest):
@@ -441,6 +456,58 @@ async def get_favorites(uuid: str, limit: int = 300):
         return {"status": "success", "results": rows}
     except Exception:
         return {"status": "error", "message": "Failed to fetch favorited recipes.", "results": []}
+
+
+@app.get("/api/posts")
+async def list_posts(tag: str = "all", limit: int = 200):
+    normalized_tag = tag.strip().lower()
+    if normalized_tag != "all" and normalized_tag not in ALLOWED_POST_TAGS:
+        return {"status": "error", "message": "Invalid tag filter.", "results": []}
+    try:
+        rows = await run_in_threadpool(get_posts, normalized_tag, limit)
+        return {"status": "success", "results": rows}
+    except Exception:
+        return {"status": "error", "message": "Failed to fetch posts.", "results": []}
+
+
+@app.post("/api/posts")
+async def create_global_post(body: CreatePostRequest):
+    content = body.content.strip()
+    if not content:
+        return {"status": "error", "message": "Post content cannot be empty."}
+    normalized_tag = body.tag.strip().lower()
+    if normalized_tag not in ALLOWED_POST_TAGS:
+        return {"status": "error", "message": "Invalid post tag."}
+    if normalized_tag == "recipe recommendation":
+        normalized_tag = "recipe reccomendation"
+    if normalized_tag == "food giveaway" and not (body.location or "").strip():
+        return {"status": "error", "message": "Location is required for food giveaway posts."}
+    try:
+        item = await run_in_threadpool(
+            create_post,
+            body.uuid.strip(),
+            body.author_name.strip() or "Anonymous",
+            content,
+            normalized_tag,
+            body.location,
+        )
+        return {"status": "success", "item": item}
+    except Exception:
+        return {"status": "error", "message": "Failed to create post."}
+
+
+@app.post("/api/posts/{post_id}/kind")
+async def toggle_kind(post_id: str, body: TogglePostKindRequest):
+    actor = body.uuid.strip()
+    if not actor:
+        return {"status": "error", "message": "Missing user id."}
+    try:
+        result = await run_in_threadpool(toggle_post_kind, post_id, actor)
+        if not result:
+            return {"status": "error", "message": "Post not found."}
+        return {"status": "success", **result}
+    except Exception:
+        return {"status": "error", "message": "Failed to update interaction."}
 
 
 # Convert text to speech audio using ElevenLabs

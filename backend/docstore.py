@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
+from typing import Any
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -409,3 +410,66 @@ def get_favorited_recipes(uuid: str, limit: int = 300):
         data = doc.to_dict() or {}
         rows.append({"favorite_id": doc.id, **data})
     return rows
+
+
+def create_post(author_uuid: str, author_name: str, content: str, tag: str, location: str | None = None) -> dict[str, Any]:
+    """Create a new global community post."""
+    posts_ref = db.collection("posts")
+    payload: dict[str, Any] = {
+        "author_uuid": author_uuid,
+        "author_name": author_name.strip() or "Anonymous",
+        "content": content.strip(),
+        "tag": tag,
+        "kind_users": [],
+        "kind_count": 0,
+        "created_at": firestore.SERVER_TIMESTAMP,
+    }
+    if location and location.strip():
+        payload["location"] = location.strip()
+
+    _, doc_ref = posts_ref.add(payload)
+    doc_ref.update({"post_id": doc_ref.id})
+    snap = doc_ref.get()
+    return {"post_id": doc_ref.id, **(snap.to_dict() or payload)}
+
+
+def get_posts(tag: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    """Return global posts newest-first, optionally filtered by tag."""
+    coll = db.collection("posts")
+    query = coll
+    if tag and tag != "all":
+        query = query.where("tag", "==", tag)
+    query = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(max(1, min(limit, 500)))
+
+    rows: list[dict[str, Any]] = []
+    for doc in query.stream():
+        data = doc.to_dict() or {}
+        rows.append({"post_id": doc.id, **data})
+    return rows
+
+
+def toggle_post_kind(post_id: str, actor_uuid: str) -> dict[str, Any] | None:
+    """Toggle a user's kind interaction on a post and return updated summary."""
+    ref = db.collection("posts").document(post_id)
+    snap = ref.get()
+    if not snap.exists:
+        return None
+
+    data = snap.to_dict() or {}
+    kind_users = [u for u in (data.get("kind_users") or []) if isinstance(u, str)]
+
+    if actor_uuid in kind_users:
+        kind_users = [u for u in kind_users if u != actor_uuid]
+        user_kinded = False
+    else:
+        kind_users.append(actor_uuid)
+        user_kinded = True
+
+    kind_count = len(kind_users)
+    ref.update({"kind_users": kind_users, "kind_count": kind_count})
+
+    return {
+        "post_id": post_id,
+        "kind_count": kind_count,
+        "user_kinded": user_kinded,
+    }
