@@ -4,6 +4,7 @@ FROM python:3.12-slim
 # Install system dependencies and cleanup apt cache to reduce image size
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
+    libzbar0 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
