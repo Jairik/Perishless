@@ -6,10 +6,84 @@ import os
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# Authenticate with Firebase using the service account key JSON file
-_KEY_PATH = os.getenv("FIREBASE_KEY_PATH") or os.path.join(os.path.dirname(__file__), "perishless-3c73c-firebase-adminsdk-fbsvc-17d12425cf.json")
-cred = credentials.Certificate(_KEY_PATH)
-firebase_admin.initialize_app(cred)
+# Authenticate with Firebase using layered credential fallbacks
+def _resolve_firebase_key_path() -> str | None:
+    """Resolve a usable Firebase service-account JSON path with multiple fallbacks."""
+    backend_dir = os.path.dirname(__file__)
+
+    env_candidates = [
+        os.getenv("FIREBASE_KEY_PATH"),
+        os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+        os.getenv("FIREBASE_CREDENTIALS"),
+    ]
+
+    filename_candidates = [
+        "perishless-3c73c-firebase-adminsdk-fbsvc-17d12425cf.json",
+        "firebase.json",
+        "service-account.json",
+        "serviceAccountKey.json",
+    ]
+
+    path_candidates: list[str] = []
+
+    for candidate in env_candidates:
+        if not candidate:
+            continue
+        candidate = os.path.expanduser(candidate)
+        if os.path.isdir(candidate):
+            for filename in filename_candidates:
+                path_candidates.append(os.path.join(candidate, filename))
+        else:
+            path_candidates.append(candidate)
+
+    # Local repo and container defaults
+    path_candidates.extend([
+        os.path.join(backend_dir, "perishless-3c73c-firebase-adminsdk-fbsvc-17d12425cf.json"),
+        os.path.join(backend_dir, "firebase.json"),
+        "/app/perishless-3c73c-firebase-adminsdk-fbsvc-17d12425cf.json",
+        "/app/firebase.json",
+    ])
+
+    # De-duplicate while preserving order
+    seen: set[str] = set()
+    for candidate in path_candidates:
+        normalized = os.path.abspath(candidate)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if os.path.isfile(normalized):
+            return normalized
+
+    return None
+
+
+def _initialize_firebase_app() -> None:
+    """Initialize Firebase app using the best available credential source."""
+    try:
+        firebase_admin.get_app()
+        return
+    except ValueError:
+        pass
+
+    key_path = _resolve_firebase_key_path()
+    if key_path:
+        cred = credentials.Certificate(key_path)
+        firebase_admin.initialize_app(cred)
+        return
+
+    # Last-resort fallback: Application Default Credentials (ADC)
+    try:
+        firebase_admin.initialize_app(credentials.ApplicationDefault())
+        return
+    except Exception as exc:
+        raise RuntimeError(
+            "Firebase credentials not found. Set FIREBASE_KEY_PATH (file), "
+            "or mount a service-account JSON in backend/, /app, or configure "
+            "GOOGLE_APPLICATION_CREDENTIALS / ADC."
+        ) from exc
+
+
+_initialize_firebase_app()
 
 # Get a global reference to the Firestore client
 db = firestore.client()

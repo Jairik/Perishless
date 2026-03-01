@@ -9,6 +9,10 @@ services:
     restart: always
     ports:
       - "8000:8000"
+    volumes:
+      - ./perishless-3c73c-firebase-adminsdk-fbsvc-17d12425cf.json:/app/firebase.json:ro
+    environment:
+      FIREBASE_KEY_PATH: /app/firebase.json
 
   # Frontend service - run the React frontend with nginx serving the built files
   frontend:
@@ -19,7 +23,3 @@ services:
       - backend
     ports:
       - "3000:80"
-    volumes:
-      - ~/firebase.json:/app/firebase.json
-    environement:
-      - FIREBASE_KEY_PATH: /app/firebase.json
