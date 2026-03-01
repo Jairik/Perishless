@@ -1,16 +1,29 @@
-# Frontend Dockerfile - builds the React frontend using Vite and serves it with nginx
-FROM node:20 AS build
-
-# Set working directory and download dependencies
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm install
-
-# Copy and build source code
-COPY . .
-
-RUN npm run build
-
-# Serve using nginx
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
+# ---------- Build Stage ----------
+    FROM node:20-alpine AS builder
+    
+    WORKDIR /app
+    
+    # Copy package files first for caching
+    COPY package.json package-lock.json* ./
+    RUN npm install
+    
+    # Copy rest of source (INCLUDING .env.production)
+    COPY . .
+    
+    # Build production bundle
+    RUN npm run build
+    
+    
+    # ---------- Production Stage ----------
+    FROM nginx:alpine
+    
+    # Remove default nginx config
+    RUN rm -rf /usr/share/nginx/html/*
+    
+    # Copy built app from builder
+    COPY --from=builder /app/dist /usr/share/nginx/html
+    
+    # Expose port 80 (container internal)
+    EXPOSE 80
+    
+    CMD ["nginx", "-g", "daemon off;"]
