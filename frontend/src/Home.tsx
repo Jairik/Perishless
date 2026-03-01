@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Barcode, CircleUser, LogOut, UserPen, X, Upload, SendHorizonal, CheckCheck, Receipt, HeartHandshake } from 'lucide-react'
+import { Barcode, CircleUser, LogOut, UserPen, X, Upload, SendHorizonal, CheckCheck, Receipt, HeartHandshake, Package, Palette } from 'lucide-react'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
 import type { Result, Exception } from '@zxing/library'
@@ -25,7 +25,7 @@ function renderMarkdown(text: string): string {
 
 function Home() {
   const navigate = useNavigate()
-  const { user: currentUser, uuid } = useAuth()
+  const { user: currentUser, uuid, loading: authLoading } = useAuth()
 
   const [aiMessage, setAiMessage] = useState('')
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
@@ -41,7 +41,84 @@ function Home() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [consumingItems, setConsumingItems] = useState<Set<string>>(new Set())
   const [hoveredItem, setHoveredItem] = useState<Record<string, unknown> | null>(null)
+  const [devourOverlay, setDevourOverlay] = useState(false)
+  const [devourMeal, setDevourMeal] = useState('')
+  const [throwAwayOverlay, setThrowAwayOverlay] = useState(false)
+  const [throwAwayMeal, setThrowAwayMeal] = useState('')
+  const [cbMode, setCbMode] = useState(() => localStorage.getItem('cb-mode') === '1')
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  // Manual add modal
+  const [manualAddOpen, setManualAddOpen] = useState(false)
+  const [manualAddName, setManualAddName] = useState('')
+  const [manualAddExpiry, setManualAddExpiry] = useState('')
+  const [manualAddCategory, setManualAddCategory] = useState('')
+  const [manualAddLoading, setManualAddLoading] = useState(false)
+  const [manualAddError, setManualAddError] = useState('')
+  const [addingItems, setAddingItems] = useState<Set<string>>(new Set())
+
+  function openManualAdd(name = '') {
+    setManualAddName(name)
+    setManualAddExpiry('')
+    setManualAddCategory('')
+    setManualAddError('')
+    setManualAddOpen(true)
+    setSearchOpen(false)
+  }
+
+  async function handleManualAdd() {
+    if (!uuid || !manualAddName.trim()) return
+    setManualAddLoading(true)
+    setManualAddError('')
+    try {
+      const res = await fetch(`${API}/api/items/${uuid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: manualAddName.trim(),
+          category: manualAddCategory.trim() || null,
+          expiry_date: manualAddExpiry || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.status === 'success') {
+        setManualAddOpen(false)
+        setSearchQuery('')
+        fetchPantryItems()
+      } else {
+        setManualAddError(data.message ?? 'Failed to add item')
+      }
+    } catch {
+      setManualAddError('Network error — please try again')
+    } finally {
+      setManualAddLoading(false)
+    }
+  }
+
+  async function addItemDirect(name: string, image_url?: string, barcode?: string) {
+    if (!uuid || !name.trim()) return
+    setAddingItems(prev => new Set(prev).add(name))
+    setSearchOpen(false)
+    setSearchQuery('')
+    try {
+      const res = await fetch(`${API}/api/items/${uuid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), image_url: image_url ?? null, barcode: barcode ?? null }),
+      })
+      const data = await res.json()
+      if (data.status === 'success') {
+        fetchPantryItems()
+      } else {
+        // Fall back to manual modal if the direct add fails
+        openManualAdd(name)
+      }
+    } catch {
+      openManualAdd(name)
+    } finally {
+      setAddingItems(prev => { const s = new Set(prev); s.delete(name); return s })
+    }
+  }
 
   function handleSort(col: 'name' | 'expiry' | 'tags') {
     if (sortCol !== col) {
@@ -83,15 +160,17 @@ function Home() {
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<{ name: string; image_url?: string }[]>([])
+  const [searchResults, setSearchResults] = useState<{ name: string; image_url?: string; barcode?: string }[]>([])
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchActiveIdx, setSearchActiveIdx] = useState(0)
   const searchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const q = searchQuery.trim()
     if (!q) {
       setSearchResults([])
+      setSearchActiveIdx(0)
       setSearchOpen(false)
       setSearchLoading(false)
       return
@@ -106,11 +185,12 @@ function Home() {
       setSearchLoading(true)
       setSearchOpen(true)
       try {
-        const res = await fetch(`${API}/api/autocomplete?q=${encodeURIComponent(q)}&limit=10`, { signal: controller.signal })
+        const res = await fetch(`${API}/api/autocomplete?q=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal })
         const data = await res.json()
         if (!cancelled) {
-          const results: { name: string; image_url?: string }[] = data.results ?? []
+          const results: { name: string; image_url?: string; barcode?: string }[] = data.results ?? []
           setSearchResults(results)
+          setSearchActiveIdx(0)
           setSearchOpen(results.length > 0)
         }
       } catch { /* aborted */ }
@@ -123,14 +203,15 @@ function Home() {
         const res = await fetch(`${API}/api/searchItem/${encodeURIComponent(q)}`, { signal: controller.signal })
         const data = await res.json()
         if (!cancelled) {
-          const fresh: { name: string; image_url?: string }[] = data.results ?? []
+          const fresh: { name: string; image_url?: string; barcode?: string }[] = data.results ?? []
           if (fresh.length > 0) {
             // Merge: keep any fast results not already in the broader set
             setSearchResults(prev => {
               const names = new Set(fresh.map(r => r.name.toLowerCase()))
               const extras = prev.filter(r => !names.has(r.name.toLowerCase()))
-              return [...fresh, ...extras].slice(0, 15)
+              return [...fresh, ...extras].slice(0, 5)
             })
+            setSearchActiveIdx(0)
             setSearchOpen(true)
           }
         }
@@ -146,6 +227,28 @@ function Home() {
       setSearchLoading(false)
     }
   }, [searchQuery])
+
+  // Lazily fetch images for search results that have a barcode but no image yet
+  useEffect(() => {
+    const missing = searchResults.filter(r => r.barcode && !r.image_url)
+    if (missing.length === 0) return
+    let cancelled = false
+    missing.forEach(item => {
+      fetch(`${API}/api/image/${encodeURIComponent(item.barcode!)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (cancelled || !data.image_url) return
+          setSearchResults(prev =>
+            prev.map(r => r.barcode === item.barcode && !r.image_url
+              ? { ...r, image_url: data.image_url }
+              : r
+            )
+          )
+        })
+        .catch(() => {})
+    })
+    return () => { cancelled = true }
+  }, [searchResults.map(r => r.barcode + ':' + (r.image_url ?? '')).join('|')])
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -176,8 +279,16 @@ function Home() {
   }, [uuid])
 
   useEffect(() => {
-    if (activePage === 'pantry') fetchPantryItems()
-  }, [activePage, fetchPantryItems])
+    if (activePage !== 'pantry' || authLoading || !uuid) return
+
+    // Initial fetch + one short retry to handle auth/backend race on first visit
+    fetchPantryItems()
+    const retryTimer = window.setTimeout(() => {
+      fetchPantryItems()
+    }, 900)
+
+    return () => window.clearTimeout(retryTimer)
+  }, [activePage, authLoading, uuid, fetchPantryItems])
 
   const fetchPerishThreats = useCallback(async () => {
     if (!uuid) return
@@ -235,6 +346,70 @@ function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const detectedRef = useRef(false)
   const scanControlsRef = useRef<IScannerControls | null>(null)
+
+  // Receipt scanner modal
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false)
+  const [receiptPhase, setReceiptPhase] = useState<'idle' | 'scanning' | 'results' | 'error'>('idle')
+  const [receiptItems, setReceiptItems] = useState<string[]>([])
+  const [receiptError, setReceiptError] = useState('')
+  const receiptFileRef = useRef<HTMLInputElement>(null)
+  const receiptDragRef = useRef<HTMLDivElement>(null)
+
+  function openReceiptModal() {
+    setReceiptPhase('idle')
+    setReceiptItems([])
+    setReceiptError('')
+    setReceiptModalOpen(true)
+  }
+
+  async function handleReceiptFile(file: File) {
+    if (!uuid) return
+    setReceiptPhase('scanning')
+    setReceiptItems([])
+    setReceiptError('')
+    try {
+      const form = new FormData()
+      form.append('image', file)
+      const res = await fetch(`${API}/api/scanReceipt/${uuid}`, { method: 'POST', body: form })
+      const raw = await res.text()
+      let data: { status?: string; message?: string; items?: string[] } = {}
+      try {
+        data = raw ? JSON.parse(raw) : {}
+      } catch {
+        data = { message: raw || `Server error (${res.status})` }
+      }
+
+      if (!res.ok) {
+        setReceiptError(data.message ?? `Receipt scan failed (${res.status}).`)
+        setReceiptPhase('error')
+        return
+      }
+
+      if (data.status === 'success' && Array.isArray(data.items) && data.items.length > 0) {
+        setReceiptItems(data.items)
+        setReceiptPhase('results')
+        fetchPantryItems()
+      } else {
+        setReceiptError(data.message ?? 'No food items found in the receipt.')
+        setReceiptPhase('error')
+      }
+    } catch {
+      setReceiptError('Network error — please try again.')
+      setReceiptPhase('error')
+    }
+  }
+
+  function handleReceiptInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) handleReceiptFile(file)
+    e.target.value = ''
+  }
+
+  function handleReceiptDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleReceiptFile(file)
+  }
 
   const stopCamera = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current)
@@ -402,17 +577,85 @@ function Home() {
 
   async function handleConsume(itemId: string) {
     if (!uuid) return
+    const item = pantryItems.find(p => p.item_id === itemId)
+    setDevourMeal(item?.name ?? 'Item')
+    setDevourOverlay(true)
     setConsumingItems(prev => new Set(prev).add(itemId))
+    const prevPantry = pantryItems
     setTimeout(async () => {
       try {
-        await fetch(`${API}/api/items/${uuid}/${itemId}?consumed=true`, { method: 'DELETE' })
-        fetchPantryItems()
+        setPantryItems(prev => prev.filter(p => p.item_id !== itemId))
+        const res = await fetch(`${API}/api/items/${uuid}/${itemId}?consumed=true`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Delete failed')
       } catch {
         console.error('Failed to consume item')
+        setPantryItems(prevPantry)
       } finally {
         setConsumingItems(prev => { const n = new Set(prev); n.delete(itemId); return n })
       }
     }, 420)
+  }
+
+  async function handleThrowAway(itemId: string) {
+    if (!uuid) return
+    const item = pantryItems.find(p => p.item_id === itemId)
+    setThrowAwayMeal(item?.name ?? 'Item')
+    setThrowAwayOverlay(true)
+    setConsumingItems(prev => new Set(prev).add(itemId))
+    const prevPantry = pantryItems
+    setTimeout(async () => {
+      try {
+        setPantryItems(prev => prev.filter(p => p.item_id !== itemId))
+        const res = await fetch(`${API}/api/items/${uuid}/${itemId}?consumed=false`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Delete failed')
+      } catch {
+        console.error('Failed to throw away item')
+        setPantryItems(prevPantry)
+      } finally {
+        setConsumingItems(prev => { const n = new Set(prev); n.delete(itemId); return n })
+      }
+    }, 420)
+  }
+
+  async function handleDevourRecipe(threat: PerishThreat) {
+    if (!uuid) return
+    setDevourMeal(threat.meal_type ?? 'Recipe')
+    setDevourOverlay(true)
+    // Match ingredients flagged as in-inventory against current pantry items by name
+    const inInventoryNames = (threat.ingredients ?? [])
+      .filter(ing => ing.in_inventory !== false)
+      .map(ing => ing.name.toLowerCase())
+    const toConsume = pantryItems.filter(item =>
+      inInventoryNames.includes((item.name ?? '').toLowerCase())
+    )
+    const consumedIds = new Set(toConsume.map(item => item.item_id))
+    const prevPantry = pantryItems
+
+    // Optimistic local cache update: remove consumed items immediately without full refetch
+    setPantryItems(prev => prev.filter(item => !consumedIds.has(item.item_id)))
+
+    // Fire all DELETEs concurrently; if any fail, restore only failed items from snapshot
+    const results = await Promise.allSettled(
+      toConsume.map(item =>
+        fetch(`${API}/api/items/${uuid}/${item.item_id}?consumed=true`, { method: 'DELETE' })
+      )
+    )
+
+    const failedIds = new Set<string>()
+    results.forEach((result, idx) => {
+      if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value.ok)) {
+        failedIds.add(toConsume[idx].item_id)
+      }
+    })
+
+    if (failedIds.size > 0) {
+      const failedItems = prevPantry.filter(item => failedIds.has(item.item_id))
+      setPantryItems(prev => {
+        const existing = new Set(prev.map(item => item.item_id))
+        const toRestore = failedItems.filter(item => !existing.has(item.item_id))
+        return [...prev, ...toRestore]
+      })
+    }
   }
 
   const displayName = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User'
@@ -471,9 +714,17 @@ function Home() {
   }
 
   return (
-    <div className="home">
+    <div className={`home${cbMode ? ' home--cb' : ''}`}>
       {/* Banner */}
       <header className="home-header">
+        <button
+          className="cb-toggle-btn"
+          title={cbMode ? 'Switch to default colours' : 'Switch to colorblind-friendly colours'}
+          onClick={() => setCbMode(m => { const next = !m; localStorage.setItem('cb-mode', next ? '1' : '0'); return next })}
+        >
+          <Palette size={16} />
+          <span>{cbMode ? 'Default' : 'CB Mode'}</span>
+        </button>
         <div className="home-header-logo">
           <img src="perishless-icon.png" alt="PerishLess" className="logo-icon" />
           <span className="logo-text">PerishLess</span>
@@ -524,13 +775,13 @@ function Home() {
 
       {/* Tab bar */}
       <nav className="home-tabs">
-        <button className={`home-tab ${activePage === 'pantry' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('pantry')}>
+        <button className={`home-tab ${activePage === 'pantry' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('pantry')} data-hint="View and manage your food inventory">
           My Pantry
         </button>
-        <button className={`home-tab ${activePage === 'perishthreats' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('perishthreats')}>
+        <button className={`home-tab ${activePage === 'perishthreats' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('perishthreats')} data-hint="See items nearing expiry and AI meal suggestions">
           Defeat PerishThreats
         </button>
-        <button className={`home-tab ${activePage === 'ai' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('ai')}>
+        <button className={`home-tab ${activePage === 'ai' ? 'home-tab--active' : ''}`} onClick={() => setActivePage('ai')} data-hint="Chat with Carry the chatbot to learn more about your pantry">
           Carry AI Assistant
         </button>
       </nav>
@@ -555,6 +806,26 @@ function Home() {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
+                onKeyDown={e => {
+                  if (!searchOpen) return
+                  const total = searchResults.length + (searchQuery.trim() ? 1 : 0)
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setSearchActiveIdx(i => Math.min(i + 1, total - 1))
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setSearchActiveIdx(i => Math.max(i - 1, 0))
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    if (searchActiveIdx < searchResults.length) {
+                      addItemDirect(searchResults[searchActiveIdx].name, searchResults[searchActiveIdx].image_url, searchResults[searchActiveIdx].barcode)
+                    } else if (searchQuery.trim()) {
+                      openManualAdd(searchQuery.trim())
+                    }
+                  } else if (e.key === 'Escape') {
+                    setSearchOpen(false)
+                  }
+                }}
                 className="h-full bg-[rgba(255,255,255,0.08)] border-2 border-[#4caf50] text-[#f0f7f0] placeholder:text-[#a8c5a8] focus-visible:ring-[#4caf50]"
               />
               {searchOpen && (
@@ -568,24 +839,45 @@ function Home() {
                   {searchResults.map((item, i) => (
                     <li
                       key={i}
-                      className="search-dropdown-item"
+                      className={`search-dropdown-item${searchActiveIdx === i ? ' search-dropdown-item--active' : ''}`}
                       onMouseDown={e => e.preventDefault()}
-                      onClick={() => { setSearchQuery(item.name); setSearchOpen(false) }}
                     >
-                      <div className="search-dropdown-img-wrap">
-                        {item.image_url
-                          ? <img src={item.image_url} alt={item.name} className="search-dropdown-img" />
-                          : <div className="search-dropdown-img-placeholder" />}
+                      <div
+                        className="search-dropdown-left"
+                        onClick={() => { setSearchQuery(item.name); setSearchOpen(false) }}
+                      >
+                        <div className="search-dropdown-img-wrap">
+                          {item.image_url
+                            ? <img src={item.image_url} alt={item.name} className="search-dropdown-img" />
+                            : <div className="search-dropdown-img-placeholder"><Package size={16} /></div>}
+                        </div>
+                        <span className="search-dropdown-name">{item.name}</span>
                       </div>
-                      <span className="search-dropdown-name">{item.name}</span>
+                      <button
+                        className="search-dropdown-add-btn"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => addItemDirect(item.name, item.image_url, item.barcode)}
+                        disabled={addingItems.has(item.name)}
+                        title="Add to pantry"
+                      >{addingItems.has(item.name) ? '…' : '+ Add'}</button>
                     </li>
                   ))}
+                  {searchQuery.trim() && (
+                    <li
+                      className={`search-dropdown-manual${searchActiveIdx === searchResults.length ? ' search-dropdown-item--active' : ''}`}
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => openManualAdd(searchQuery.trim())}
+                    >
+                      ＋ Add &ldquo;{searchQuery.trim()}&rdquo; manually…
+                    </li>
+                  )}
                 </ul>
               )}
             </div>
             <div className="home-search-receipt">
               <Button
                 className="w-full h-full bg-[#4caf50] hover:bg-[#43a047] hover:border-[#e65100] border-2 border-transparent text-white"
+                onClick={openReceiptModal}
               >
                 <Receipt className="!w-5 !h-5" />
                 Scan Receipt
@@ -632,7 +924,7 @@ function Home() {
                       <th className="sortable-th" onClick={() => handleSort('name')}>Name {sortIcon('name')}</th>
                       <th className="sortable-th" onClick={() => handleSort('expiry')}>Expiration Status {sortIcon('expiry')}</th>
                       <th className="sortable-th" onClick={() => handleSort('tags')}>Tags {sortIcon('tags')}</th>
-                      <th>Consume</th>
+                      <th>Devour</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -645,7 +937,7 @@ function Home() {
                       if (item.nutriscore_grade && item.nutriscore_grade !== 'Unknown')
                         tags.push({ label: `Nutri-${item.nutriscore_grade}`, cls: `tag-nutri tag-nutri-${item.nutriscore_grade.toLowerCase()}` })
                       if (item.can_donate === true)
-                        tags.push({ label: 'Donatable', cls: 'tag-donate', icon: <HeartHandshake size={12} style={{ marginRight: '0.25em', verticalAlign: 'middle' }} /> })
+                        tags.push({ label: 'Donatable', cls: 'tag-donate', icon: <HeartHandshake size={12} /> })
                       if (item.vegan_match != null && item.vegan_match >= 75)
                         tags.push({ label: 'Vegan', cls: 'tag-vegan' })
                       else if (item.vegetarian_match != null && item.vegetarian_match >= 75)
@@ -659,9 +951,10 @@ function Home() {
                           onMouseLeave={() => setHoveredItem(null)}
                         >
                           <td className="pt-name-cell">
-                            {item.image_url && (
-                              <img src={item.image_url} alt={item.name} className="pt-thumb" />
-                            )}
+                            {item.image_url
+                              ? <img src={item.image_url} alt={item.name} className="pt-thumb" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.add('pt-thumb-placeholder--visible') }} />
+                              : null}
+                            <div className={`pt-thumb-placeholder${item.image_url ? '' : ' pt-thumb-placeholder--visible'}`}><Package size={20} /></div>
                             <span>{item.name}</span>
                           </td>
                           <td>
@@ -679,15 +972,26 @@ function Home() {
                             {tags.length === 0 && <span className="pt-tag-empty">—</span>}
                           </td>
                           <td>
-                            <button
-                              className={`pt-consume-btn${consumingItems.has(item.item_id) ? ' pt-consume-btn--active' : ''}`}
-                              title="Mark as consumed"
-                              disabled={consumingItems.has(item.item_id)}
-                              onClick={() => handleConsume(item.item_id)}
-                            >
-                              <CheckCheck size={15} />
-                              Consume
-                            </button>
+                            {expiry.label === 'Expired' ? (
+                              <button
+                                className={`pt-throw-btn${consumingItems.has(item.item_id) ? ' pt-throw-btn--active' : ''}`}
+                                title="Throw away expired item"
+                                disabled={consumingItems.has(item.item_id)}
+                                onClick={() => handleThrowAway(item.item_id)}
+                              >
+                                🗑️ Throw Away
+                              </button>
+                            ) : (
+                              <button
+                                className={`pt-consume-btn${consumingItems.has(item.item_id) ? ' pt-consume-btn--active' : ''}`}
+                                title="Mark as consumed"
+                                disabled={consumingItems.has(item.item_id)}
+                                onClick={() => handleConsume(item.item_id)}
+                              >
+                                <CheckCheck size={15} />
+                                Devour
+                              </button>
+                            )}
                           </td>
                         </tr>
                       )
@@ -754,6 +1058,82 @@ function Home() {
               className="bc-file-input"
               onChange={handleFileUpload}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Scanner Modal */}
+      {receiptModalOpen && (
+        <div className="bc-overlay" onClick={e => { if (e.target === e.currentTarget) setReceiptModalOpen(false) }}>
+          <div className="bc-modal rc-modal">
+            <button className="bc-close" onClick={() => setReceiptModalOpen(false)} aria-label="Close">
+              <X size={20} />
+            </button>
+
+            <h2 className="bc-title">Scan Receipt</h2>
+
+            {/* Idle / drag-and-drop upload zone */}
+            {(receiptPhase === 'idle' || receiptPhase === 'error') && (
+              <>
+                <div
+                  ref={receiptDragRef}
+                  className="rc-dropzone"
+                  onClick={() => receiptFileRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); receiptDragRef.current?.classList.add('rc-dropzone--drag') }}
+                  onDragLeave={() => receiptDragRef.current?.classList.remove('rc-dropzone--drag')}
+                  onDrop={e => { receiptDragRef.current?.classList.remove('rc-dropzone--drag'); handleReceiptDrop(e) }}
+                >
+                  <Receipt size={36} className="rc-dropzone-icon" />
+                  <p className="rc-dropzone-label">Drop a receipt photo here</p>
+                  <p className="rc-dropzone-sub">or click to choose a file</p>
+                </div>
+                {receiptPhase === 'error' && (
+                  <p className="rc-error">{receiptError}</p>
+                )}
+                <input
+                  ref={receiptFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="bc-file-input"
+                  onChange={handleReceiptInputChange}
+                />
+              </>
+            )}
+
+            {/* Scanning spinner */}
+            {receiptPhase === 'scanning' && (
+              <div className="rc-scanning">
+                <span className="rc-spinner" />
+                <p className="rc-scanning-label">Reading receipt…</p>
+                <p className="rc-scanning-sub">OCR + AI are extracting your items</p>
+              </div>
+            )}
+
+            {/* Results */}
+            {receiptPhase === 'results' && (
+              <div className="rc-results">
+                <p className="rc-results-header">
+                  <CheckCheck size={16} />
+                  {receiptItems.length} item{receiptItems.length !== 1 ? 's' : ''} added to your pantry!
+                </p>
+                <ul className="rc-results-list">
+                  {receiptItems.map((name, i) => (
+                    <li key={i} className="rc-results-item">
+                      <Package size={13} />
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+                <div className="rc-results-actions">
+                  <button className="rc-scan-again-btn" onClick={() => { setReceiptPhase('idle'); setReceiptItems([]) }}>
+                    Scan Another
+                  </button>
+                  <button className="rc-done-btn" onClick={() => setReceiptModalOpen(false)}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -854,6 +1234,12 @@ function Home() {
                         )
                       })}
                     </ul>
+                    <button
+                      className="pt-defeat-btn"
+                      onClick={e => { e.stopPropagation(); handleDevourRecipe(threat) }}
+                    >
+                      ⚔ Defeat!
+                    </button>
                   </div>
                 </div>}
               </div>
@@ -924,6 +1310,81 @@ function Home() {
             </Button>
           </div>
         </main>
+      )}
+
+      {/* Manual Add Modal */}
+      {manualAddOpen && (
+        <div className="manual-add-backdrop" onClick={() => setManualAddOpen(false)}>
+          <div className="manual-add-modal" onClick={e => e.stopPropagation()}>
+            <h2 className="manual-add-title">Add Item to Pantry</h2>
+            <div className="manual-add-fields">
+              <label className="manual-add-label">Item Name *
+                <input
+                  className="manual-add-input"
+                  value={manualAddName}
+                  onChange={e => setManualAddName(e.target.value)}
+                  placeholder="e.g. Sourdough Bread"
+                  autoFocus
+                />
+              </label>
+              <label className="manual-add-label">Expiry Date
+                <input
+                  type="date"
+                  className="manual-add-input"
+                  value={manualAddExpiry}
+                  onChange={e => setManualAddExpiry(e.target.value)}
+                />
+              </label>
+              <label className="manual-add-label">Category
+                <input
+                  className="manual-add-input"
+                  value={manualAddCategory}
+                  onChange={e => setManualAddCategory(e.target.value)}
+                  placeholder="e.g. dairy, vegetables…"
+                />
+              </label>
+            </div>
+            {manualAddError && <p className="manual-add-error">{manualAddError}</p>}
+            <div className="manual-add-actions">
+              <button className="manual-add-cancel" onClick={() => setManualAddOpen(false)} disabled={manualAddLoading}>Cancel</button>
+              <button
+                className="manual-add-submit"
+                onClick={handleManualAdd}
+                disabled={manualAddLoading || !manualAddName.trim()}
+              >
+                {manualAddLoading ? 'Adding…' : 'Add Item'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Devour full-screen overlay */}
+      {devourOverlay && (
+        <div
+          className="recipe-devour-overlay"
+          onAnimationEnd={() => setDevourOverlay(false)}
+        >
+          <div className="recipe-devour-content">
+            <span className="recipe-devour-icon">⚔</span>
+            <h2 className="recipe-devour-title">{devourMeal}</h2>
+            <p className="recipe-devour-sub">PerishThreat Defeated!</p>
+          </div>
+        </div>
+      )}
+
+      {/* Throw Away full-screen overlay */}
+      {throwAwayOverlay && (
+        <div
+          className="throw-away-overlay"
+          onAnimationEnd={() => setThrowAwayOverlay(false)}
+        >
+          <div className="throw-away-content">
+            <span className="throw-away-icon">😢</span>
+            <h2 className="throw-away-title">{throwAwayMeal}</h2>
+            <p className="throw-away-sub">Thrown Away&hellip;</p>
+          </div>
+        </div>
       )}
 
       {/* Pantry item hover tooltip */}

@@ -6,3 +6,13 @@ uvicorn
 openfoodfacts
 python-dotenv
 firebase-admin
+pytesseract
+pillow
+opencv-python
+pyzbar
+python-multipart
+google-genai
+sqlalchemy
+pymysql
+cryptography
+cloud-sql-python-connector[pymysql]
