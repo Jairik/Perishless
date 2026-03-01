@@ -1,11 +1,25 @@
-backend:
-  build:
-    context: ./backend
-    dockerfile: Dockerfile
-  container_name: perishless-backend
-  restart: always
-  # REMOVE THIS LINE:
-  # ports:
-  #   - "8000:8000"
-  expose:
-    - "8000"
+services:
+
+  # Backend service - run the FastAPI backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: perishless-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./perishless-3c73c-firebase-adminsdk-fbsvc-17d12425cf.json:/app/firebase.json:ro
+    environment:
+      FIREBASE_KEY_PATH: /app/firebase.json
+
+  # Frontend service - run the React frontend with nginx serving the built files
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: perishless-frontend
+    restart: always
+    ports:
+      - "3000:80"
