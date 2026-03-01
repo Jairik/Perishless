@@ -23,23 +23,30 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install
 
-# Copy production env file template before source copy/build
-COPY .env.production ./.env.production
-
 # Copy and build source code
 COPY . .
 
-# If build args are provided, write/update .env.production so Vite bundles these values.
-RUN printf "VITE_FIREBASE_API_KEY=%s\nVITE_FIREBASE_AUTH_DOMAIN=%s\nVITE_FIREBASE_PROJECT_ID=%s\nVITE_FIREBASE_STORAGE_BUCKET=%s\nVITE_FIREBASE_MESSAGING_SENDER_ID=%s\nVITE_FIREBASE_APP_ID=%s\nVITE_FIREBASE_MEASUREMENT_ID=%s\n" \
-	"$VITE_FIREBASE_API_KEY" \
-	"$VITE_FIREBASE_AUTH_DOMAIN" \
-	"$VITE_FIREBASE_PROJECT_ID" \
-	"$VITE_FIREBASE_STORAGE_BUCKET" \
-	"$VITE_FIREBASE_MESSAGING_SENDER_ID" \
-	"$VITE_FIREBASE_APP_ID" \
-	"$VITE_FIREBASE_MEASUREMENT_ID" \
-	> .env.production && npm run build
+RUN npm run build
 
 # Serve using nginx
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
+
+RUN cat <<'EOF' > /docker-entrypoint.d/40-write-runtime-env.sh
+#!/bin/sh
+set -eu
+
+cat > /usr/share/nginx/html/env.js <<ENVJS
+window.__APP_ENV__ = {
+  VITE_FIREBASE_API_KEY: "${VITE_FIREBASE_API_KEY:-}",
+  VITE_FIREBASE_AUTH_DOMAIN: "${VITE_FIREBASE_AUTH_DOMAIN:-}",
+  VITE_FIREBASE_PROJECT_ID: "${VITE_FIREBASE_PROJECT_ID:-}",
+  VITE_FIREBASE_STORAGE_BUCKET: "${VITE_FIREBASE_STORAGE_BUCKET:-}",
+  VITE_FIREBASE_MESSAGING_SENDER_ID: "${VITE_FIREBASE_MESSAGING_SENDER_ID:-}",
+  VITE_FIREBASE_APP_ID: "${VITE_FIREBASE_APP_ID:-}",
+  VITE_FIREBASE_MEASUREMENT_ID: "${VITE_FIREBASE_MEASUREMENT_ID:-}"
+};
+ENVJS
+EOF
+
+RUN chmod +x /docker-entrypoint.d/40-write-runtime-env.sh
