@@ -1,4 +1,5 @@
 from __future__ import annotations
+# Dev just adding stuff in here for POC while nginx and docker is dump
 
 import os
 from datetime import datetime, timezone
