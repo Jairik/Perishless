@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { signOut, updateProfile } from 'firebase/auth'
@@ -57,6 +57,8 @@ interface PerishThreatIngredient {
 }
 
 type PostTag = 'food giveaway' | 'recipe reccomendation' | 'misc'
+type PostReaction = 'kind' | 'love' | 'celebrate' | 'support'
+type FeedSort = 'newest' | 'most-reacted' | 'tag-az' | 'tag-za'
 
 interface GlobalPost {
   post_id: string
@@ -65,10 +67,19 @@ interface GlobalPost {
   content?: string
   tag: PostTag
   location?: string
+  reaction_counts?: Partial<Record<PostReaction, number>>
+  reaction_users?: Partial<Record<PostReaction, string[]>>
   kind_count?: number
   kind_users?: string[]
   created_at?: unknown
 }
+
+const FEED_REACTIONS: Array<{ key: PostReaction; label: string; emoji: string }> = [
+  { key: 'kind', label: 'Kind', emoji: '🤝' },
+  { key: 'love', label: 'Love', emoji: '💚' },
+  { key: 'celebrate', label: 'Celebrate', emoji: '🎉' },
+  { key: 'support', label: 'Support', emoji: '🫶' },
+]
 
 function Home() {
   const navigate = useNavigate()
@@ -232,13 +243,14 @@ function Home() {
   const [globalLoading, setGlobalLoading] = useState(false)
   const [globalError, setGlobalError] = useState('')
   const [globalFilterTag, setGlobalFilterTag] = useState<'all' | PostTag>('all')
+  const [globalSort, setGlobalSort] = useState<FeedSort>('newest')
   const [postModalOpen, setPostModalOpen] = useState(false)
   const [postText, setPostText] = useState('')
   const [postTag, setPostTag] = useState<PostTag>('misc')
   const [postLocation, setPostLocation] = useState('')
   const [postSubmitting, setPostSubmitting] = useState(false)
   const [postError, setPostError] = useState('')
-  const [kindPending, setKindPending] = useState<Set<string>>(new Set())
+  const [reactionPending, setReactionPending] = useState<Set<string>>(new Set())
   const [favoriteRecipesOpen, setFavoriteRecipesOpen] = useState(false)
   const [favoriteRecipesLoading, setFavoriteRecipesLoading] = useState(false)
   const [favoriteRecipesError, setFavoriteRecipesError] = useState('')
@@ -346,6 +358,47 @@ function Home() {
     }
   }, [globalFilterTag])
 
+  const sortedGlobalPosts = useMemo(() => {
+    const posts = [...globalPosts]
+
+    const getCreatedMs = (post: GlobalPost): number => {
+      const raw = post.created_at
+      if (typeof raw === 'object' && raw && '_seconds' in (raw as Record<string, unknown>)) {
+        return Number((raw as Record<string, unknown>)._seconds ?? 0) * 1000
+      }
+      const t = new Date(String(raw ?? '')).getTime()
+      return Number.isFinite(t) ? t : 0
+    }
+
+    const getReactionTotal = (post: GlobalPost): number => {
+      const counts = post.reaction_counts ?? {}
+      const total = FEED_REACTIONS.reduce((sum, reaction) => {
+        const value = counts[reaction.key]
+        return sum + (typeof value === 'number' ? value : 0)
+      }, 0)
+      if (total > 0) return total
+      return Number(post.kind_count ?? 0)
+    }
+
+    posts.sort((a, b) => {
+      if (globalSort === 'most-reacted') {
+        const diff = getReactionTotal(b) - getReactionTotal(a)
+        if (diff !== 0) return diff
+        return getCreatedMs(b) - getCreatedMs(a)
+      }
+
+      if (globalSort === 'tag-az' || globalSort === 'tag-za') {
+        const cmp = a.tag.localeCompare(b.tag)
+        if (cmp !== 0) return globalSort === 'tag-az' ? cmp : -cmp
+        return getCreatedMs(b) - getCreatedMs(a)
+      }
+
+      return getCreatedMs(b) - getCreatedMs(a)
+    })
+
+    return posts
+  }, [globalPosts, globalSort])
+
   async function submitGlobalPost() {
     if (!uuid) return
     if (!postText.trim()) {
@@ -389,34 +442,56 @@ function Home() {
     }
   }
 
-  async function togglePostKind(postId: string) {
-    if (!uuid || kindPending.has(postId)) return
-    setKindPending(prev => new Set(prev).add(postId))
+  async function togglePostReaction(postId: string, reaction: PostReaction) {
+    if (!uuid) return
+    const pendingKey = `${postId}:${reaction}`
+    if (reactionPending.has(pendingKey)) return
+    setReactionPending(prev => new Set(prev).add(pendingKey))
     try {
-      const res = await fetch(`${API}/api/posts/${postId}/kind`, {
+      const res = await fetch(`${API}/api/posts/${postId}/react`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uuid }),
+        body: JSON.stringify({ uuid, reaction }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data.status !== 'success') return
 
       setGlobalPosts(prev => prev.map(post => {
         if (post.post_id !== postId) return post
-        const oldUsers = Array.isArray(post.kind_users) ? post.kind_users : []
-        const nextUsers = data.user_kinded
-          ? Array.from(new Set([...oldUsers, uuid]))
-          : oldUsers.filter(u => u !== uuid)
+        const previousUsers = Array.isArray(post.reaction_users?.[reaction])
+          ? post.reaction_users?.[reaction] as string[]
+          : []
+        const nextUsers = data.user_reacted
+          ? Array.from(new Set([...previousUsers, uuid]))
+          : previousUsers.filter(u => u !== uuid)
+
+        const nextReactionUsers: Partial<Record<PostReaction, string[]>> = {
+          ...(post.reaction_users ?? {}),
+          [reaction]: nextUsers,
+        }
+
+        const serverReactionCounts = data.reaction_counts && typeof data.reaction_counts === 'object'
+          ? data.reaction_counts as Partial<Record<PostReaction, number>>
+          : {}
+
+        const nextReactionCounts: Partial<Record<PostReaction, number>> = {
+          ...(post.reaction_counts ?? {}),
+          ...serverReactionCounts,
+          [reaction]: typeof data.reaction_count === 'number' ? data.reaction_count : nextUsers.length,
+        }
+
         return {
           ...post,
-          kind_count: typeof data.kind_count === 'number' ? data.kind_count : nextUsers.length,
-          kind_users: nextUsers,
+          reaction_users: nextReactionUsers,
+          reaction_counts: nextReactionCounts,
+          kind_count: nextReactionCounts.kind ?? 0,
+          kind_users: nextReactionUsers.kind ?? [],
         }
       }))
     } finally {
-      setKindPending(prev => {
+      setReactionPending(prev => {
         const next = new Set(prev)
-        next.delete(postId)
+        next.delete(pendingKey)
         return next
       })
     }
@@ -2150,17 +2225,33 @@ function Home() {
         <main className="home-main feed-page">
           <div className="feed-topbar">
             <h2 className="feed-title">Global Community Feed</h2>
-            <button
-              className="feed-plus-btn"
-              onClick={() => {
-                setPostError('')
-                setPostModalOpen(true)
-              }}
-              title="Create post"
-              aria-label="Create post"
-            >
-              <Plus size={18} />
-            </button>
+            <div className="feed-topbar-actions">
+              <div className="feed-sort-wrap">
+                <select
+                  className="feed-sort-select"
+                  value={globalSort}
+                  onChange={e => setGlobalSort(e.target.value as FeedSort)}
+                  aria-label="Sort global feed"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="most-reacted">Most reacted</option>
+                  <option value="tag-az">Tag (A-Z)</option>
+                  <option value="tag-za">Tag (Z-A)</option>
+                </select>
+                <span className="feed-sort-caret">▾</span>
+              </div>
+              <button
+                className="feed-plus-btn"
+                onClick={() => {
+                  setPostError('')
+                  setPostModalOpen(true)
+                }}
+                title="Create post"
+                aria-label="Create post"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="feed-filters">
@@ -2183,8 +2274,7 @@ function Home() {
 
           {!globalLoading && !globalError && globalPosts.length > 0 && (
             <div className="feed-list">
-              {globalPosts.map(post => {
-                const userKinded = !!uuid && (post.kind_users ?? []).includes(uuid)
+              {sortedGlobalPosts.map(post => {
                 const createdDate = new Date(
                   typeof post.created_at === 'object' && post.created_at && '_seconds' in (post.created_at as Record<string, unknown>)
                     ? Number((post.created_at as Record<string, unknown>)._seconds) * 1000
@@ -2218,13 +2308,29 @@ function Home() {
                     )}
 
                     <div className="feed-actions">
-                      <button
-                        className={`feed-kind-btn${userKinded ? ' feed-kind-btn--active' : ''}`}
-                        onClick={() => togglePostKind(post.post_id)}
-                        disabled={kindPending.has(post.post_id)}
-                      >
-                        🤝 Kind ({post.kind_count ?? 0})
-                      </button>
+                      {FEED_REACTIONS.map(reaction => {
+                        const reactedUsers = Array.isArray(post.reaction_users?.[reaction.key])
+                          ? post.reaction_users?.[reaction.key] as string[]
+                          : []
+                        const reactedByMe = !!uuid && reactedUsers.includes(uuid)
+                        const count = typeof post.reaction_counts?.[reaction.key] === 'number'
+                          ? Number(post.reaction_counts?.[reaction.key])
+                          : reaction.key === 'kind'
+                            ? Number(post.kind_count ?? reactedUsers.length)
+                            : reactedUsers.length
+                        const pendingKey = `${post.post_id}:${reaction.key}`
+
+                        return (
+                          <button
+                            key={`${post.post_id}-${reaction.key}`}
+                            className={`feed-reaction-btn${reactedByMe ? ' feed-reaction-btn--active' : ''}`}
+                            onClick={() => togglePostReaction(post.post_id, reaction.key)}
+                            disabled={reactionPending.has(pendingKey)}
+                          >
+                            {reaction.emoji} {reaction.label} ({count})
+                          </button>
+                        )
+                      })}
                     </div>
                   </article>
                 )
@@ -2444,15 +2550,18 @@ function Home() {
 
             <label className="feed-modal-label">
               Tag
-              <select
-                className="feed-modal-select"
-                value={postTag}
-                onChange={e => setPostTag(e.target.value as PostTag)}
-              >
-                <option value="food giveaway">food giveaway</option>
-                <option value="recipe reccomendation">recipe reccomendation</option>
-                <option value="misc">misc</option>
-              </select>
+              <div className="feed-modal-select-wrap">
+                <select
+                  className="feed-modal-select"
+                  value={postTag}
+                  onChange={e => setPostTag(e.target.value as PostTag)}
+                >
+                  <option value="food giveaway">food giveaway</option>
+                  <option value="recipe reccomendation">recipe reccomendation</option>
+                  <option value="misc">misc</option>
+                </select>
+                <span className="feed-modal-select-caret">▾</span>
+              </div>
             </label>
 
             {postTag === 'food giveaway' && (

@@ -8,7 +8,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
-from docstore import create_user, add_food_item, get_food_items, delete_food_item, consume_food_item, trash_food_item, get_history_items, add_favorited_recipe, remove_favorited_recipe, get_favorited_recipes, update_item_image, list_posts_payload, create_post_payload, toggle_post_kind_payload
+from docstore import create_user, add_food_item, get_food_items, delete_food_item, consume_food_item, trash_food_item, get_history_items, add_favorited_recipe, remove_favorited_recipe, get_favorited_recipes, update_item_image, list_posts_payload, create_post_payload, toggle_post_kind_payload, toggle_post_reaction_payload
 from oof import get_product_info, find_products_by_name
 from lm import generate_recipe_recommendation, generate_expiry_recipe, gemini_chat_response, fill_item_details_from_name, generate_perishthreats, parse_receipt_items, analyze_health_impacts, generate_daily_motivational_quote
 from scan_doc import detect_barcode, ocr_receipt
@@ -398,6 +398,11 @@ class CreatePostRequest(BaseModel):
 class TogglePostKindRequest(BaseModel):
     uuid: str
 
+
+class TogglePostReactionRequest(BaseModel):
+    uuid: str
+    reaction: str
+
 # Regenerate PerishThreats with optional custom instructions
 @app.post("/api/perishthreats/{uuid}")
 async def regenerate_perishthreats(uuid: str, body: RegenerateThreatsRequest):
@@ -479,9 +484,21 @@ async def create_global_post(body: CreatePostRequest):
 
 
 @app.post("/api/posts/{post_id}/kind")
+@app.post("/api/posts/{post_id}/kind/")
 async def toggle_kind(post_id: str, body: TogglePostKindRequest):
     try:
         return await run_in_threadpool(toggle_post_kind_payload, post_id, body.uuid)
+    except Exception:
+        return {"status": "error", "message": "Failed to update interaction."}
+
+
+@app.post("/api/posts/{post_id}/react")
+@app.post("/api/posts/{post_id}/react/")
+@app.post("/api/posts/{post_id}/reaction")
+@app.post("/api/posts/{post_id}/reaction/")
+async def toggle_reaction(post_id: str, body: TogglePostReactionRequest):
+    try:
+        return await run_in_threadpool(toggle_post_reaction_payload, post_id, body.uuid, body.reaction)
     except Exception:
         return {"status": "error", "message": "Failed to update interaction."}
 

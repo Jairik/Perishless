@@ -11,6 +11,7 @@ ALLOWED_POST_TAGS = {"food giveaway", "recipe reccomendation", "misc"}
 POST_TAG_ALIASES = {
     "recipe recommendation": "recipe reccomendation",
 }
+ALLOWED_POST_REACTIONS = {"kind", "love", "celebrate", "support"}
 
 # Authenticate with Firebase using layered credential fallbacks
 def _resolve_firebase_key_path() -> str | None:
@@ -420,11 +421,15 @@ def get_favorited_recipes(uuid: str, limit: int = 300):
 def create_post(author_uuid: str, author_name: str, content: str, tag: str, location: str | None = None) -> dict[str, Any]:
     """Create a new global community post."""
     posts_ref = db.collection("posts")
+    reaction_counts = {reaction: 0 for reaction in ALLOWED_POST_REACTIONS}
+    reaction_users = {reaction: [] for reaction in ALLOWED_POST_REACTIONS}
     payload: dict[str, Any] = {
         "author_uuid": author_uuid,
         "author_name": author_name.strip() or "Anonymous",
         "content": content.strip(),
         "tag": tag,
+        "reaction_counts": reaction_counts,
+        "reaction_users": reaction_users,
         "kind_users": [],
         "kind_count": 0,
         "created_at": firestore.SERVER_TIMESTAMP,
@@ -438,6 +443,45 @@ def create_post(author_uuid: str, author_name: str, content: str, tag: str, loca
     return {"post_id": doc_ref.id, **(snap.to_dict() or payload)}
 
 
+def _normalized_reactions(data: dict[str, Any]) -> tuple[dict[str, int], dict[str, list[str]]]:
+    """Read reaction state from a post doc, normalizing legacy and partial payloads."""
+    counts: dict[str, int] = {reaction: 0 for reaction in ALLOWED_POST_REACTIONS}
+    users: dict[str, list[str]] = {reaction: [] for reaction in ALLOWED_POST_REACTIONS}
+
+    raw_counts = data.get("reaction_counts")
+    if isinstance(raw_counts, dict):
+        for reaction, value in raw_counts.items():
+            if reaction in counts:
+                try:
+                    counts[reaction] = max(0, int(value))
+                except Exception:
+                    counts[reaction] = 0
+
+    raw_users = data.get("reaction_users")
+    if isinstance(raw_users, dict):
+        for reaction, value in raw_users.items():
+            if reaction in users and isinstance(value, list):
+                normalized = [v for v in value if isinstance(v, str) and v.strip()]
+                users[reaction] = list(dict.fromkeys(normalized))
+
+    legacy_kind_users = data.get("kind_users")
+    if not users["kind"] and isinstance(legacy_kind_users, list):
+        normalized = [v for v in legacy_kind_users if isinstance(v, str) and v.strip()]
+        users["kind"] = list(dict.fromkeys(normalized))
+
+    legacy_kind_count = data.get("kind_count")
+    if counts["kind"] == 0:
+        if isinstance(legacy_kind_count, int) and legacy_kind_count > 0:
+            counts["kind"] = legacy_kind_count
+        elif users["kind"]:
+            counts["kind"] = len(users["kind"])
+
+    for reaction in ALLOWED_POST_REACTIONS:
+        counts[reaction] = max(counts[reaction], len(users[reaction]))
+
+    return counts, users
+
+
 def get_posts(tag: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
     """Return global posts newest-first, optionally filtered by tag."""
     coll = db.collection("posts")
@@ -449,34 +493,68 @@ def get_posts(tag: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for doc in query.stream():
         data = doc.to_dict() or {}
-        rows.append({"post_id": doc.id, **data})
+        reaction_counts, reaction_users = _normalized_reactions(data)
+        rows.append({
+            "post_id": doc.id,
+            **data,
+            "reaction_counts": reaction_counts,
+            "reaction_users": reaction_users,
+            "kind_count": reaction_counts["kind"],
+            "kind_users": reaction_users["kind"],
+        })
     return rows
 
 
-def toggle_post_kind(post_id: str, actor_uuid: str) -> dict[str, Any] | None:
-    """Toggle a user's kind interaction on a post and return updated summary."""
+def toggle_post_reaction(post_id: str, actor_uuid: str, reaction: str) -> dict[str, Any] | None:
+    """Toggle a user's reaction on a post and return updated summary."""
     ref = db.collection("posts").document(post_id)
     snap = ref.get()
     if not snap.exists:
         return None
 
+    reaction_key = (reaction or "").strip().lower()
+    if reaction_key not in ALLOWED_POST_REACTIONS:
+        raise ValueError("Invalid reaction")
+
     data = snap.to_dict() or {}
-    kind_users = [u for u in (data.get("kind_users") or []) if isinstance(u, str)]
+    counts, users = _normalized_reactions(data)
 
-    if actor_uuid in kind_users:
-        kind_users = [u for u in kind_users if u != actor_uuid]
-        user_kinded = False
+    existing = users[reaction_key]
+    if actor_uuid in existing:
+        users[reaction_key] = [u for u in existing if u != actor_uuid]
+        user_reacted = False
     else:
-        kind_users.append(actor_uuid)
-        user_kinded = True
+        users[reaction_key] = [*existing, actor_uuid]
+        user_reacted = True
 
-    kind_count = len(kind_users)
-    ref.update({"kind_users": kind_users, "kind_count": kind_count})
+    counts[reaction_key] = len(users[reaction_key])
+
+    ref.update({
+        "reaction_counts": counts,
+        "reaction_users": users,
+        "kind_count": counts["kind"],
+        "kind_users": users["kind"],
+    })
 
     return {
         "post_id": post_id,
-        "kind_count": kind_count,
-        "user_kinded": user_kinded,
+        "reaction": reaction_key,
+        "user_reacted": user_reacted,
+        "reaction_count": counts[reaction_key],
+        "reaction_counts": counts,
+    }
+
+
+def toggle_post_kind(post_id: str, actor_uuid: str) -> dict[str, Any] | None:
+    """Toggle a user's kind interaction on a post and return updated summary."""
+    result = toggle_post_reaction(post_id, actor_uuid, "kind")
+    if not result:
+        return None
+
+    return {
+        "post_id": post_id,
+        "kind_count": result.get("reaction_count", 0),
+        "user_kinded": result.get("user_reacted", False),
     }
 
 
@@ -536,6 +614,22 @@ def toggle_post_kind_payload(post_id: str, actor_uuid: str) -> dict[str, Any]:
         return {"status": "error", "message": "Missing user id."}
 
     result = toggle_post_kind(post_id, actor)
+    if not result:
+        return {"status": "error", "message": "Post not found."}
+    return {"status": "success", **result}
+
+
+def toggle_post_reaction_payload(post_id: str, actor_uuid: str, reaction: str) -> dict[str, Any]:
+    """Toggle generic post reaction and return API-ready payload."""
+    actor = (actor_uuid or "").strip()
+    if not actor:
+        return {"status": "error", "message": "Missing user id."}
+
+    normalized = (reaction or "").strip().lower()
+    if normalized not in ALLOWED_POST_REACTIONS:
+        return {"status": "error", "message": "Invalid reaction type."}
+
+    result = toggle_post_reaction(post_id, actor, normalized)
     if not result:
         return {"status": "error", "message": "Post not found."}
     return {"status": "success", **result}
