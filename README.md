@@ -6,7 +6,7 @@ It combines a modern web app with AI-assisted tooling to help users track food, 
 ## Links
 
 - **Live Site:** https://perishless.tech
-- **Devpost:** Coming soon
+- **Devpost:** https://devpost.com/software/perishless?ref_content=my-projects-tab&ref_feature=my_projects
 
 ## What this project includes
 
